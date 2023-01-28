@@ -1,4 +1,4 @@
-#include <torchgis/cartesian.h>
+#include <torchgis/en/triangle.h>
 
 #include <ATen/Functions.h>
 
@@ -7,7 +7,7 @@ using namespace torch::indexing;
 
 
 namespace torchgis {
-namespace cartesian {
+namespace en {
 
 
 torch::Tensor circumcenter2d(const torch::Tensor& input) {
@@ -39,5 +39,15 @@ torch::Tensor circumradius2d(const torch::Tensor& input) {
 }
 
 
-} // cartesian
+torch::Tensor shull2d(const torch::Tensor& points) {
+  TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got: ", points.dim(), "D");
+
+  torch::Tensor min, max;
+  std::tie(min, max) = points.aminmax(0);
+
+  return torch::tensor({1, 2});
+}
+
+
+} // en
 } // torchgis
