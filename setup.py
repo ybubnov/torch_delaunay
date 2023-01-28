@@ -12,8 +12,8 @@ setup(
         CppExtension(
             name="torchgis._c",
             sources=[
-                "src/cartesian.cc",
-                "torchgis/__bind__/cartesian.cc",
+                "src/en/triangle.cc",
+                "torchgis/__bind__/en.cc",
             ],
             include_dirs=[
                 str(Path.cwd() / "include"),

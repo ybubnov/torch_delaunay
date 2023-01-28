@@ -4,12 +4,15 @@
 
 
 namespace torchgis {
-namespace cartesian {
+namespace en {
+
 
 torch::Tensor circumcenter2d(const torch::Tensor& input);
 
 torch::Tensor circumradius2d(const torch::Tensor& input);
 
+torch::Tensor shull2d(const torch::Tensor& points);
 
-} // namespace cartesian
+
+} // namespace en
 } // namespace torchgis
