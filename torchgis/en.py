@@ -1,14 +1,18 @@
 import torch
-import torchgis._c as _c
+import torchgis._en as _en
 
 
 def circumradius2d(input: torch.Tensor) -> torch.Tensor:
-    return _c.circumradius2d(input)
+    return _en.circumradius2d(input)
 
 
 def circumcenter2d(input: torch.Tensor) -> torch.Tensor:
-    return _c.circumcenter2d(input)
+    return _en.circumcenter2d(input)
+
+
+def dist(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+    return _en.dist(p, q)
 
 
 def shull2d(points: torch.Tensor) -> torch.Tensor:
-    return _c.shull2d(points)
+    return _en.shull2d(points)
