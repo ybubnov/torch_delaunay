@@ -6,10 +6,16 @@
 namespace torchgis {
 namespace en {
 
+torch::Tensor triangle_orient2d(
+  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2);
 
-torch::Tensor circumcenter2d(const torch::Tensor& input);
+torch::Tensor triangle_circumcenter2d(
+  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2);
 
-torch::Tensor circumradius2d(const torch::Tensor& input);
+torch::Tensor triangle_circumradius2d(
+  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2);
+
+torch::Tensor dist(const torch::Tensor& points, const torch::Tensor& q);
 
 torch::Tensor shull2d(const torch::Tensor& points);
 

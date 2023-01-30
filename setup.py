@@ -10,7 +10,7 @@ setup(
 
     ext_modules=[
         CppExtension(
-            name="torchgis._c",
+            name="torchgis._en",
             sources=[
                 "src/en/triangle.cc",
                 "torchgis/__bind__/en.cc",
