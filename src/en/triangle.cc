@@ -1,4 +1,5 @@
 #include <torchgis/en/triangle.h>
+#include <torchgis/en/predicates.h>
 
 #include <ATen/native/cpu/Loops.h>
 #include <torch/linalg.h>
@@ -9,29 +10,6 @@ using namespace torch::indexing;
 
 namespace torchgis {
 namespace en {
-
-
-torch::Tensor orient2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2) {
-  const auto d0 = p1 - p0;
-  const auto d1 = (p2 - p1).index({Slice(), torch::tensor({1, 0})});
-
-  return (d0 * d1).diff(1).less(0.0);
-}
-
-
-torch::Tensor incircle2d(
-  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2, const torch::Tensor& q) {
-
-  const auto d0 = p0 - q;
-  const auto d1 = p1 - q;
-  const auto d2 = p2 - q;
-  const auto d = torch::stack({d0, d1, d2}, 1);
-
-  const auto abc = d.square().sum(2);
-  const auto A = torch::cat({d, abc.view({-1, 3, 1})}, -1);
-
-  return torch::linalg::det(A).sign();
-}
 
 
 torch::Tensor circumcenter2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2) {
@@ -152,6 +130,41 @@ torch::Tensor lawson_flip(const torch::Tensor& triangles_, const torch::Tensor& 
 }
 
 
+struct _SHull {
+  std::vector<int64_t> hash;
+  std::int64_t hash_size;
+
+  std::vector<int64_t> next;
+  std::vector<int64_t> prev;
+
+  double center_x;
+  double center_y;
+
+  _SHull(int64_t n, double x, double y) :
+      hash(), hash_size(), next(n), prev(n), center_x(), center_y()
+  {
+    hash_size = static_cast<std::int64_t>(std::llround(std::ceil(std::sqrt(n))));
+    hash.resize(hash_size);
+    std::fill(hash.begin(), hash.end(), -1);
+
+    center_x = x;
+    center_y = y;
+  }
+
+  int64_t key(const double x, const double y) const {
+    const double dx = x - center_x;
+    const double dy = y - center_y;
+
+    // pseudo angle
+    const auto p = dx / (std::abs(dx) + std::abs(dy));
+    const auto angle = (dy > 0.0 ? 3.0 - p : 1.0 + p) / 4.0;
+
+    const auto k = std::llround(std::floor(angle) * hash_size);
+    return static_cast<std::int64_t>(k) % hash_size;
+  }
+};
+
+
 torch::Tensor shull2d(const torch::Tensor& points) {
   TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got: ", points.dim(), "D");
 
@@ -173,11 +186,11 @@ torch::Tensor shull2d(const torch::Tensor& points) {
     i1 = indices[1];
   }
 
+  auto p0 = points[i0].unsqueeze(0);
+  auto p1 = points[i1].unsqueeze(0);
+
   // Find the third point such that forms the smallest circumcircle with i0 and i1.
   {
-    const auto p0 = points[i0].unsqueeze(0);
-    const auto p1 = points[i1].unsqueeze(0);
-
     const auto radiuses = torchgis::en::circumradius2d(points, p0, p1);
 
     torch::Tensor values, indices;
@@ -185,8 +198,27 @@ torch::Tensor shull2d(const torch::Tensor& points) {
     i2 = indices[0];
   }
 
-  //at::native::binary_kernel_reduce();
+  auto p2 = points[i2].unsqueeze(0);
 
+  // Order points to make a right handed system: this is initial convex hull.
+  const auto orient = torchgis::en::orient2d(p0, p1, p2);
+  if (orient.le(0.0).all().item<bool>()) {
+    std::swap(i1, i2);
+    std::swap(p1, p2);
+  }
+
+  {
+    const auto center = torchgis::en::circumcenter2d(p0, p1, p2);
+    // Radially resort the points.
+    const auto order = at::argsort(torchgis::en::dist(points, center));
+  }
+
+  const auto center = torchgis::en::circumcenter2d(p0, p1, p2);
+  const auto center_ptr = center[0].data_ptr<float>();
+  const auto n = points.size(0);
+  _SHull hull(n, center_ptr[0], center_ptr[1]);
+
+  std::cout << "SHULL: (" << hull.center_x << ", " << hull.center_y << ")" << std::endl;
 
   return at::cat({points[i0], points[i1], points[i2]});
 }
