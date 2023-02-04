@@ -13,6 +13,7 @@ setup(
             name="torchgis._en",
             sources=[
                 "src/en/triangle.cc",
+                "src/en/predicates.cc",
                 "torchgis/__bind__/en.cc",
             ],
             include_dirs=[
