@@ -10,16 +10,23 @@ namespace torchgis {
 namespace en {
 
 
-torch::Tensor orient2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2) {
-  const auto d0 = p1 - p0;
-  const auto d1 = (p2 - p1).index({Slice(), torch::tensor({1, 0})});
+torch::Tensor orient2d(
+  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2
+) {
+  const auto dx = p0 - p2;
+  const auto dy = p1 - p2;
 
-  return (d0 * d1).diff(1).sign();
+  const auto A = torch::stack({dx, dy}, 1);
+  return torch::linalg::det(A).sign();
 }
 
 
 torch::Tensor incircle2d(
-  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2, const torch::Tensor& q) {
+  const torch::Tensor& p0,
+  const torch::Tensor& p1,
+  const torch::Tensor& p2,
+  const torch::Tensor& q
+) {
 
   const auto d0 = p0 - q;
   const auto d1 = p1 - q;
@@ -32,6 +39,19 @@ torch::Tensor incircle2d(
   return torch::linalg::det(A).sign();
 }
 
+
+bool all_clockwise2d(
+  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2
+) {
+  return torchgis::en::orient2d(p0, p1, p2).lt(0.0).all().item<bool>();
+}
+
+
+bool all_counterclockwise2d(
+  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2
+) {
+  return torchgis::en::orient2d(p0, p1, p2).gt(0.0).all().item<bool>();
+}
 
 
 } // namespace en
