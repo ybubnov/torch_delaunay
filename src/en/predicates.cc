@@ -17,7 +17,7 @@ torch::Tensor orient2d(
   const auto dy = p1 - p2;
 
   const auto A = torch::stack({dx, dy}, 1);
-  return torch::linalg::det(A).sign();
+  return -torch::linalg::det(A).sign();
 }
 
 
