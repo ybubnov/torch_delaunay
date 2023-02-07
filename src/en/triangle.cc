@@ -183,7 +183,7 @@ struct _SHull {
     const auto rad = dx / (std::abs(dx) + std::abs(dy));
     const auto angle = (dy > 0.0 ? 3.0 - rad : 1.0 + rad) / 4.0;
 
-    const auto k = std::llround(std::floor(angle) * static_cast<double>(hash_size));
+    const auto k = std::llround(std::floor(angle * static_cast<double>(hash_size)));
     return static_cast<std::int64_t>(k) % hash_size;
   }
 
@@ -257,10 +257,10 @@ torch::Tensor shull2d(const torch::Tensor& points) {
   // Radially resort the points.
   const auto center = torchgis::en::circumcenter2d(p0, p1, p2);
 
-  std::cout << "circumcenter: " << center << std::endl;
-  std::cout << "distances: " << torchgis::en::dist(points, center) << std::endl;
+  //std::cout << "circumcenter: " << center << std::endl;
+  //std::cout << "distances: " << torchgis::en::dist(points, center) << std::endl;
   const auto ordering = at::argsort(torchgis::en::dist(points, center));
-  std::cout << "ordering: " << ordering << std::endl;
+  //std::cout << "ordering: " << ordering << std::endl;
 
   _SHull hull(n, center.index({0, 0}).item<float>(), center.index({0, 1}).item<float>());
 
@@ -281,11 +281,15 @@ torch::Tensor shull2d(const torch::Tensor& points) {
   hull.prev[i2] = i1;
 
   std::cout << "hull initialized" << std::endl;
+  std::vector<int64_t> faces;
 
   print_triangle("Ts", i0, i1, i2);
+  faces.push_back(i0.item<int64_t>());
+  faces.push_back(i1.item<int64_t>());
+  faces.push_back(i2.item<int64_t>());
 
   for (const auto k : c10::irange(n)) {
-    const auto i = ordering.index({k});
+    auto i = ordering.index({k});
     const auto pi = points.index({i}).unsqueeze(0);
 
     std::cout << "processing " << i.item<int64_t>() << " (" << pi[0][0].item<float>() << "," << pi[0][1].item<int64_t>() << ")" << std::endl;
@@ -320,10 +324,14 @@ torch::Tensor shull2d(const torch::Tensor& points) {
       pq = points[iq].unsqueeze(0);
       print_triangle("  ti", i, ie, iq);
 
-      if (!torchgis::en::all_clockwise2d(pi, pe, pq)) {
+      if (!torchgis::en::all_counterclockwise2d(pi, pe, pq)) {
         break;
       }
     }
+
+    faces.push_back(ie.item<int64_t>());
+    faces.push_back(i.item<int64_t>());
+    faces.push_back(hull.next[ie].item<int64_t>());
 
     print_triangle("Ti", ie, i, hull.next[ie]);
 
@@ -338,13 +346,17 @@ torch::Tensor shull2d(const torch::Tensor& points) {
       pn = points[in].unsqueeze(0);
       pq = points[iq].unsqueeze(0);
 
-      if (!torchgis::en::all_counterclockwise2d(pi, pn, pq)) {
+      if (!torchgis::en::all_clockwise2d(pi, pn, pq)) {
         break;
       }
 
       // Add a new triangle.
       print_triangle("Tn", in, i, iq);
-      hull.next.index_put_({in}, in);
+
+      faces.push_back(in.item<int64_t>());
+      faces.push_back(i.item<int64_t>());
+      faces.push_back(iq.item<int64_t>());
+      //hull.next.index_put_({in}, in);
     }
 
     if ((ie == is).all().item<bool>()) {
@@ -357,15 +369,23 @@ torch::Tensor shull2d(const torch::Tensor& points) {
         pe = points[ie].unsqueeze(0);
         pq = points[iq].unsqueeze(0);
 
-        if (!torchgis::en::all_counterclockwise2d(pi, pq, pe)) {
+        if (!torchgis::en::all_clockwise2d(pi, pq, pe)) {
           break;
         }
 
         // Add a new triangle.
         print_triangle("Te", iq, i, ie);
-        hull.next.index_put_({ie}, ie);
+
+        faces.push_back(iq.item<int64_t>());
+        faces.push_back(i.item<int64_t>());
+        faces.push_back(ie.item<int64_t>());
+        //hull.next.index_put_({ie}, ie);
       }
     }
+
+    i = i.clone();
+    ie = ie.clone();
+    in = in.clone();
 
     hull.prev.index_put_({i}, ie);
     hull.prev.index_put_({in}, i);
@@ -376,7 +396,11 @@ torch::Tensor shull2d(const torch::Tensor& points) {
     hull.set(hull.key(points[ie].unsqueeze(0)), ie);
   }
 
-  return at::cat({points[i0], points[i1], points[i2]});
+  const auto tn = static_cast<int64_t>(faces.size() / 3);
+
+  const auto opts = torch::dtype(torch::kInt64);
+
+  return at::from_blob(faces.data(), {tn, 3}, opts).clone();
 }
 
 
