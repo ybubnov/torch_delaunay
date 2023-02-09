@@ -65,83 +65,90 @@ torch::Tensor dist(const torch::Tensor& p, const torch::Tensor& q) {
 }
 
 
-torch::Tensor lawson_flip(const torch::Tensor& triangles_, const torch::Tensor& points_) {
-  torch::Tensor triangles = triangles_.contiguous();
-  torch::Tensor points = points_.contiguous();
+void _lawson_flip_out(
+  const torch::Tensor& triangles,
+  const torch::Tensor& halfedges, 
+  const torch::Tensor& points,
+  const torch::Tensor& pr,
+  const torch::Tensor& pl,
+  const torch::Tensor& p0,
+  torch::Tensor& out
+) {
+  auto index_twin = halfedges.index_select(0, pl).index_select(1, pr);
+  std::cout << "OPPOSITE" << std::endl << index_twin.to_dense() << std::endl;
 
-  torch::Tensor out = torch::empty(triangles.sizes(), triangles.options());
+  // TODO: implement diag for sparse coo tensor.
+  auto twins = index_twin.to_dense().diag();
+  twins = twins - 1;
+  std::cout << "TWINS" << std::endl << twins << std::endl;
 
-  const auto m = points.size(0)*3;
+  twins = torch::where(twins.ne(-1), twins, p0);
+  std::cout << "TWINS (defaulted)" << std::endl << twins << std::endl;
 
-  torch::Tensor he_indices = torch::full({2, m}, -1, triangles.options());
-  torch::Tensor he_values = torch::full({m}, -1, triangles.options());
+  //torch::Tensor p1 = triangles.index({twins - 1, dim});
+  const auto p1 = twins;
+  std::cout << "P1: " << p1 << std::endl;
 
-  auto n = triangles.size(0);
+  const auto incircle = torchgis::en::incircle2d(
+    points.index({p0}), points.index({pr}), points.index({pl}), points.index({p1})
+  );
+  //std::cout << "IN CIRCLE" << std::endl << incircle << std::endl;
+  std::cout << "PP: " << torch::column_stack({p0, pr, pl, p1, incircle}) << std::endl;
+
+  for (int64_t i = 0; i < out.sizes()[0]; i++) {
+    if ((incircle[i].item<int64_t>() > 0)) {
+      std::cout << "flip " << i << std::endl;
+      out.index_put_({i, 0}, p0[i].item<int64_t>());
+      out.index_put_({i, 1}, pr[i].item<int64_t>());
+      out.index_put_({i, 2}, p1[i].item<int64_t>());
+    }
+  }
+}
+
+
+torch::Tensor lawson_flip(const torch::Tensor& triangles, const torch::Tensor& points) {
+  torch::Tensor out = triangles.clone();
+
+  const auto n = triangles.size(0);
+
+  torch::Tensor he_indices = torch::full({2, n*3}, -1, triangles.options());
+  torch::Tensor he_values = torch::full({n*3}, -1, triangles.options());
 
   for (const auto i : c10::irange(n)) {
-    const auto a = triangles.index({i, 0});
-    const auto b = triangles.index({i, 1});
-    const auto c = triangles.index({i, 2});
+    auto v0 = triangles.index({i, 0}).item<int64_t>();
+    auto v1 = triangles.index({i, 1}).item<int64_t>();
+    auto v2 = triangles.index({i, 2}).item<int64_t>();
 
-    he_indices.index_put_({0, i+0}, b);
-    he_indices.index_put_({1, i+0}, a);
-    he_indices.index_put_({0, i+1}, c);
-    he_indices.index_put_({1, i+1}, b);
-    he_indices.index_put_({0, i+2}, a);
-    he_indices.index_put_({1, i+2}, c);
+    std::cout << i;
+    he_indices.index_put_({0, i*3+0}, v0);
+    he_indices.index_put_({1, i*3+0}, v1);
 
-    he_values.index_put_({i+0}, i+1);
-    he_values.index_put_({i+1}, i+1);
-    he_values.index_put_({i+2}, i+1);
+    he_indices.index_put_({0, i*3+1}, v1);
+    he_indices.index_put_({1, i*3+1}, v2);
+
+    he_indices.index_put_({0, i*3+2}, v2);
+    he_indices.index_put_({1, i*3+2}, v0);
+    std::cout << " ind... ";
+
+    he_values.index_put_({i*3+0}, v2+1);
+    he_values.index_put_({i*3+1}, v0+1);
+    he_values.index_put_({i*3+2}, v1+1);
+    std::cout << "vals..." << std::endl;
   }
 
-  const auto mask = he_values.greater(-1);
-  const auto halfedges = torch::sparse_coo_tensor(
-    he_indices.index({Slice(), mask}), he_values.index({mask})
-  );
+  const auto halfedges = torch::sparse_coo_tensor(he_indices, he_values);
   std::cout << "REV INDEX" << std::endl << halfedges.to_dense() << std::endl;
 
   torch::Tensor pr = triangles.index({Slice(), 0}).contiguous();
   torch::Tensor pl = triangles.index({Slice(), 1}).contiguous();
   torch::Tensor p0 = triangles.index({Slice(), 2}).contiguous();
 
-  // TODO: implement diag for sparse coo tensor.
-  auto p1_ = halfedges.index_select(0, pr).index_select(1, pl).to_dense().diag();
-  std::cout << "P1'" << std::endl << p1_ << std::endl;
-
-  // TODO: -1 is not correct value.
-  torch::Tensor p1 = triangles.index({p1_ - 1, 2}).contiguous();
-
-  const int64_t* p0_ptr = p0.data_ptr<int64_t>();
-  const int64_t* pl_ptr = pl.data_ptr<int64_t>();
-  const int64_t* p1_ptr = p1.data_ptr<int64_t>();
-
-  std::cout << "P0 (points)" << std::endl << points.index({p0}) << std::endl;
-  std::cout << "Pr (points)" << std::endl << points.index({pr}) << std::endl;
-  std::cout << "Pl (points)" << std::endl << points.index({pl}) << std::endl;
-  std::cout << "P1 (points)" << std::endl << points.index({p1}) << std::endl;
-
-  const auto orient = torchgis::en::orient2d(
-    points.index({p0}), points.index({pr}), points.index({pl})
-  );
-  std::cout << "ORIENT" << std::endl << orient << std::endl;
-
-  const auto incircle = torchgis::en::incircle2d(
-    points.index({p0}), points.index({pr}), points.index({pl}), points.index({p1})
-  ).contiguous();
-  std::cout << "IN CIRCLE" << std::endl << incircle << std::endl;
-
-  const float* incircle_ptr = incircle.data_ptr<float>();
-
-  for (int64_t i = 0; i < out.sizes()[0]; i++) {
-    if (incircle_ptr[i] > 0) {
-      out.index_put_({i, 0}, p1_ptr[i]);
-      out.index_put_({i, 1}, pl_ptr[i]);
-      out.index_put_({i, 2}, p0_ptr[i]);
-    } else {
-      out.index_put_({i}, triangles[i]);
-    }
-  }
+  _lawson_flip_out(triangles, halfedges, points, pr, pl, p0, out);
+  std::cout << "OUT" << std::endl << out << std::endl;
+  _lawson_flip_out(triangles, halfedges, points, p0, pr, pl, out);
+  std::cout << "OUT" << std::endl << out << std::endl;
+  _lawson_flip_out(triangles, halfedges, points, pl, p0, pr, out);
+  std::cout << "OUT" << std::endl << out << std::endl;
 
   return out;
 }
@@ -217,15 +224,16 @@ torch::Tensor shull2d(const torch::Tensor& points) {
     const auto centroid = (max + min) / 2;
     std::cout << "centroid: " << centroid << std::endl;
     const auto dists = torchgis::en::dist(points, centroid);
+    std::cout << "dists: " << dists << std::endl;
 
     torch::Tensor values, indices;
     std::tie(values, indices) = at::topk(dists, 2, /*dim=*/-1, /*largest=*/false, /*sorted=1*/true);
 
     i0 = indices[0];
     i1 = indices[1];
-
-    std::cout << "i0: " << i0.item<int64_t>() << " i1: " << i1.item<int64_t>() << std::endl;
   }
+
+  std::cout << "i0: " << i0.item<int64_t>() << " i1: " << i1.item<int64_t>() << std::endl;
 
   auto p0 = points[i0].unsqueeze(0);
   auto p1 = points[i1].unsqueeze(0);
@@ -244,10 +252,11 @@ torch::Tensor shull2d(const torch::Tensor& points) {
 
   auto p2 = points[i2].unsqueeze(0);
 
-  // Order points to make a right handed system: this is initial convex hull.
-  if (torchgis::en::all_clockwise2d(p0, p1, p2)) {
-    print_triangle("SWAP", i0, i1, i2);
-    std::cout << torchgis::en::orient2d(p0, p1, p2) << std::endl;
+  //i1 = torch::tensor(2, torch::dtype(torch::kInt64));
+  //p1 = points[i1].unsqueeze(0);
+
+  if (torchgis::en::all_counterclockwise2d(p0, p1, p2)) {
+    std::cout << "swapped" << std::endl;
     std::swap(i1, i2);
     std::swap(p1, p2);
   }
@@ -266,33 +275,38 @@ torch::Tensor shull2d(const torch::Tensor& points) {
 
   std::cout << "hull created" << std::endl;
 
+  i0 = i0.clone();
+  i1 = i1.clone();
+  i2 = i2.clone();
+
   hull.set(hull.key(p0), i0);
   hull.set(hull.key(p1), i1);
   hull.set(hull.key(p2), i2);
 
-  std::cout << "hash initialized" << std::endl;
+  std::cout << "hash: " << hull.hash << std::endl;
 
-  hull.next[i0] = i1;
-  hull.next[i1] = i2;
-  hull.next[i2] = i0;
+  hull.next.index_put_({i0}, i1);
+  hull.next.index_put_({i1}, i2);
+  hull.next.index_put_({i2}, i0);
 
-  hull.prev[i0] = i2;
-  hull.prev[i1] = i0;
-  hull.prev[i2] = i1;
+  hull.prev.index_put_({i0}, i2);
+  hull.prev.index_put_({i1}, i0);
+  hull.prev.index_put_({i2}, i1);
 
-  std::cout << "hull initialized" << std::endl;
+  std::cout << "HULL NEXT: \n" << hull.next << std::endl;
+  std::cout << "HULL PREV: \n" << hull.prev << std::endl;
   std::vector<int64_t> faces;
 
   print_triangle("Ts", i0, i1, i2);
   faces.push_back(i0.item<int64_t>());
-  faces.push_back(i1.item<int64_t>());
   faces.push_back(i2.item<int64_t>());
+  faces.push_back(i1.item<int64_t>());
 
   for (const auto k : c10::irange(n)) {
     auto i = ordering.index({k});
     const auto pi = points.index({i}).unsqueeze(0);
 
-    std::cout << "processing " << i.item<int64_t>() << " (" << pi[0][0].item<float>() << "," << pi[0][1].item<int64_t>() << ")" << std::endl;
+    std::cout << "processing " << i.item<int64_t>() << " (" << pi[0][0].item<float>() << "," << pi[0][1].item<float>() << ")" << std::endl;
 
     if ((i == i0).all().item<bool>() ||
         (i == i1).all().item<bool>() ||
@@ -305,6 +319,7 @@ torch::Tensor shull2d(const torch::Tensor& points) {
     torch::Tensor is = torch::tensor(0, torch::dtype(torch::kInt64));
     for (int64_t j = 0; j < hull.size(); j++) {
       is = hull.get(key + j);
+      std::cout << "next key: " << (key + j) << std::endl;
       if (is.ne(-1).all().item<bool>() && is.ne(hull.next[is]).all().item<bool>()) {
         break;
       }
@@ -322,31 +337,29 @@ torch::Tensor shull2d(const torch::Tensor& points) {
 
       pe = points[ie].unsqueeze(0);
       pq = points[iq].unsqueeze(0);
-      print_triangle("  ti", i, ie, iq);
+      print_triangle("  ti", i, ie, hull.next[ie]);
 
-      if (!torchgis::en::all_counterclockwise2d(pi, pe, pq)) {
+      if (torchgis::en::all_counterclockwise2d(pi, pe, pq)) {
         break;
       }
     }
 
     faces.push_back(ie.item<int64_t>());
-    faces.push_back(i.item<int64_t>());
     faces.push_back(hull.next[ie].item<int64_t>());
+    faces.push_back(i.item<int64_t>());
 
     print_triangle("Ti", ie, i, hull.next[ie]);
 
     // Traverse forward.
     auto in = hull.next[ie];
-    iq = in;
 
     while (true) {
-      in = iq;
-      iq = hull.next[in];
+      iq = hull.next[in].clone();
 
       pn = points[in].unsqueeze(0);
       pq = points[iq].unsqueeze(0);
 
-      if (!torchgis::en::all_clockwise2d(pi, pn, pq)) {
+      if (!torchgis::en::all_counterclockwise2d(pi, pn, pq)) {
         break;
       }
 
@@ -354,32 +367,40 @@ torch::Tensor shull2d(const torch::Tensor& points) {
       print_triangle("Tn", in, i, iq);
 
       faces.push_back(in.item<int64_t>());
-      faces.push_back(i.item<int64_t>());
       faces.push_back(iq.item<int64_t>());
-      //hull.next.index_put_({in}, in);
+      faces.push_back(i.item<int64_t>());
+
+      in = in.clone();
+      hull.next.index_put_({in}, in);
+      in = iq.clone();
+
+      print_triangle(" tn", in, i, iq);
     }
 
     if ((ie == is).all().item<bool>()) {
       iq = is;
 
       while (true) {
-        ie = iq;
-        iq = hull.prev[ie];
+        iq = hull.prev[ie].clone();
 
         pe = points[ie].unsqueeze(0);
         pq = points[iq].unsqueeze(0);
 
-        if (!torchgis::en::all_clockwise2d(pi, pq, pe)) {
+        if (!torchgis::en::all_counterclockwise2d(pi, pq, pe)) {
           break;
         }
 
         // Add a new triangle.
         print_triangle("Te", iq, i, ie);
+        std::cout << "  te " << torchgis::en::orient2d(pi, pq, pe)[0].item<int64_t>() << std::endl;
 
         faces.push_back(iq.item<int64_t>());
-        faces.push_back(i.item<int64_t>());
         faces.push_back(ie.item<int64_t>());
-        //hull.next.index_put_({ie}, ie);
+        faces.push_back(i.item<int64_t>());
+
+        ie = ie.clone();
+        hull.next.index_put_({ie}, ie.clone());
+        ie = iq.clone();
       }
     }
 
@@ -391,6 +412,8 @@ torch::Tensor shull2d(const torch::Tensor& points) {
     hull.prev.index_put_({in}, i);
     hull.next.index_put_({ie}, i);
     hull.next.index_put_({i}, in);
+    std::cout << "HULL (next): " << hull.next << std::endl;
+    std::cout << "HULL (prev): " << hull.prev << std::endl;
 
     hull.set(key, i);
     hull.set(hull.key(points[ie].unsqueeze(0)), ie);

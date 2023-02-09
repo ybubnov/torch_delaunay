@@ -7,16 +7,20 @@ import torchgis._en as _en
 def incircle2d(p0: torch.Tensor, p1: torch.Tensor, p2: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
     return _en.incircle2d(p0, p1, p2, q)
 
-def circumradius2d(input: torch.Tensor) -> torch.Tensor:
-    return _en.circumradius2d(input)
+def circumradius2d(p0, p1, p2):
+    return _en.circumradius2d(p0, p1, p2)
 
 
-def circumcenter2d(input: torch.Tensor) -> torch.Tensor:
-    return _en.circumcenter2d(input)
+def circumcenter2d(p0, p1, p2):
+    return _en.circumcenter2d(p0, p1, p2)
 
 
 def dist(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
     return _en.dist(p, q)
+
+
+def incircle2d(p0, p1, p2, q):
+    return _en.incircle2d(p0, p1, p2, q)
 
 
 def lawson_flip(

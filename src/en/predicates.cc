@@ -10,6 +10,8 @@ namespace torchgis {
 namespace en {
 
 
+// orient2d returns positive value if p0, p1, p2 are in counter-clockwise order.
+// orient2d returns negative value if p0, p1, p2 are in clockwise order.
 torch::Tensor orient2d(
   const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2
 ) {
@@ -17,10 +19,12 @@ torch::Tensor orient2d(
   const auto dy = p1 - p2;
 
   const auto A = torch::stack({dx, dy}, 1);
-  return -torch::linalg::det(A).sign();
+  return torch::linalg::det(A).sign();
 }
 
 
+// incircle2d returns a positive value if q lies inside the oriented circle p0p1p2.
+// incircle2d returns a negative value if q lies outside the oriented circle p0p1p2.
 torch::Tensor incircle2d(
   const torch::Tensor& p0,
   const torch::Tensor& p1,
@@ -40,17 +44,17 @@ torch::Tensor incircle2d(
 }
 
 
-bool all_clockwise2d(
-  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2
-) {
-  return torchgis::en::orient2d(p0, p1, p2).lt(0.0).all().item<bool>();
-}
-
-
 bool all_counterclockwise2d(
   const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2
 ) {
-  return torchgis::en::orient2d(p0, p1, p2).gt(0.0).all().item<bool>();
+  return torchgis::en::orient2d(p0, p1, p2).gt(0).all().item<bool>();
+}
+
+
+bool all_clockwise2d(
+  const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2
+) {
+  return torchgis::en::orient2d(p0, p1, p2).lt(0).all().item<bool>();
 }
 
 
