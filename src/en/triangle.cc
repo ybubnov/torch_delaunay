@@ -422,7 +422,6 @@ torch::Tensor shull2d(const torch::Tensor& points) {
   const auto tn = static_cast<int64_t>(faces.size() / 3);
 
   const auto opts = torch::dtype(torch::kInt64);
-
   return at::from_blob(faces.data(), {tn, 3}, opts).clone();
 }
 
