@@ -48,14 +48,14 @@ incircle2d(
 bool
 all_counterclockwise2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 {
-    return torch_delaunay::en::orient2d(p0, p1, p2).gt(0).all().item<bool>();
+    return orient2d(p0, p1, p2).gt(0).all().item<bool>();
 }
 
 
 bool
 all_clockwise2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 {
-    return torch_delaunay::en::orient2d(p0, p1, p2).lt(0).all().item<bool>();
+    return orient2d(p0, p1, p2).lt(0).all().item<bool>();
 }
 
 

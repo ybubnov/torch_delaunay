@@ -92,7 +92,7 @@ _lawson_flip_out(
     const auto p1 = twins;
     std::cout << "P1: " << p1 << std::endl;
 
-    const auto incircle = torch_delaunay::en::incircle2d(
+    const auto incircle = incircle2d(
         points.index({p0}), points.index({pr}), points.index({pl}), points.index({p1})
     );
     // std::cout << "IN CIRCLE" << std::endl << incircle << std::endl;
@@ -248,7 +248,7 @@ shull2d(const torch::Tensor& points)
 
         const auto centroid = (max + min) / 2;
         std::cout << "centroid: " << centroid << std::endl;
-        const auto dists = torch_delaunay::en::dist(points, centroid);
+        const auto dists = torch_delaunay::dist(points, centroid);
         std::cout << "dists: " << dists << std::endl;
 
         torch::Tensor values, indices;
@@ -268,7 +268,7 @@ shull2d(const torch::Tensor& points)
     {
         // const auto radiuses = torch_delaunay::en::circumradius2d(points, p0, p1);
         const auto radiuses
-            = torch_delaunay::en::circumradius2d(p0.repeat({n, 1}), p1.repeat({n, 1}), points);
+            = circumradius2d(p0.repeat({n, 1}), p1.repeat({n, 1}), points);
 
         torch::Tensor values, indices;
         std::tie(values, indices)
@@ -283,7 +283,7 @@ shull2d(const torch::Tensor& points)
     // i1 = torch::tensor(2, torch::dtype(torch::kInt64));
     // p1 = points[i1].unsqueeze(0);
 
-    if (torch_delaunay::en::all_counterclockwise2d(p0, p1, p2)) {
+    if (all_counterclockwise2d(p0, p1, p2)) {
         std::cout << "swapped" << std::endl;
         std::swap(i1, i2);
         std::swap(p1, p2);
@@ -292,11 +292,11 @@ shull2d(const torch::Tensor& points)
     std::cout << "seed triangle chosen" << std::endl;
 
     // Radially resort the points.
-    const auto center = torch_delaunay::en::circumcenter2d(p0, p1, p2);
+    const auto center = circumcenter2d(p0, p1, p2);
 
     // std::cout << "circumcenter: " << center << std::endl;
     // std::cout << "distances: " << torch_delaunay::en::dist(points, center) << std::endl;
-    const auto ordering = at::argsort(torch_delaunay::en::dist(points, center));
+    const auto ordering = at::argsort(torch_delaunay::dist(points, center));
     // std::cout << "ordering: " << ordering << std::endl;
 
     _SHull hull(n, center.index({0, 0}).item<float>(), center.index({0, 1}).item<float>());
@@ -368,7 +368,7 @@ shull2d(const torch::Tensor& points)
             pq = points[iq].unsqueeze(0);
             print_triangle("  ti", i, ie, hull.next[ie]);
 
-            if (torch_delaunay::en::all_counterclockwise2d(pi, pe, pq)) {
+            if (all_counterclockwise2d(pi, pe, pq)) {
                 break;
             }
         }
@@ -388,7 +388,7 @@ shull2d(const torch::Tensor& points)
             pn = points[in].unsqueeze(0);
             pq = points[iq].unsqueeze(0);
 
-            if (!torch_delaunay::en::all_counterclockwise2d(pi, pn, pq)) {
+            if (!all_counterclockwise2d(pi, pn, pq)) {
                 break;
             }
 
@@ -415,13 +415,13 @@ shull2d(const torch::Tensor& points)
                 pe = points[ie].unsqueeze(0);
                 pq = points[iq].unsqueeze(0);
 
-                if (!torch_delaunay::en::all_counterclockwise2d(pi, pq, pe)) {
+                if (!all_counterclockwise2d(pi, pq, pe)) {
                     break;
                 }
 
                 // Add a new triangle.
                 print_triangle("Te", iq, i, ie);
-                std::cout << "  te " << torch_delaunay::en::orient2d(pi, pq, pe)[0].item<int64_t>()
+                std::cout << "  te " << orient2d(pi, pq, pe)[0].item<int64_t>()
                           << std::endl;
 
                 faces.push_back(iq.item<int64_t>());
