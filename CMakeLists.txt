@@ -1,16 +1,33 @@
-cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 
-project(torchgis)
+project(torch_delaunay, CXX)
+add_definitions(-std=c++17)
+
+find_package(Torch CONFIG REQUIRED)
+
+enable_testing()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+set(torch_delaunay_LIBRARY_VERSION "1.0.0")
+set(torch_delaunay_LIBRARY_SOVERSION "1")
+
 
 include_directories(include)
-include_directories(include/torchgis)
+include_directories(include/torch_delaunay)
+include_directories(src)
 
-aux_source_directory(src torchgis_SOURCES)
 
-add_library(torchgis SHARED ${torchgis_SOURCES})
+aux_source_directory(src torch_delaunay_SOURCES)
 
-find_package(Torch REQUIRED)
 
-target_link_libraries(torchgis "${TORCH_LIBRARIES}")
+add_library(torch_delaunay SHARED ${torch_delaunay_SOURCES})
+set_target_properties(torch_delaunay PROPERTIES CXX_STANDARD 17)
+set_target_properties(torch_delaunay PROPERTIES VERSION ${torch_delaunay_LIBRARY_VERSION})
+set_target_properties(torch_delaunay PROPERTIES SOVERSION ${torch_delaunay_LIBRARY_SOVERSION})
+target_link_libraries(torch_delaunay "${TORCH_LIBRARIES}")
 
-set_property(TARGET torchgis PROPERTY CXX_STANDARD 14)
+
+# Install the library files.
+install(DIRECTORY include/torch_delaunay DESTINATION torch_delaunay)
+install(FILES include/torch_delaunay.h DESTINATION include)
+install(TARGETS torch_delaunay DESTINATION lib)
