@@ -4,17 +4,15 @@ from torch.utils.cpp_extension import CppExtension, BuildExtension
 
 setup(
     name="torchgis",
-
     package_dir={"torchgis": "torchgis"},
     packages=["torchgis"],
-
     ext_modules=[
         CppExtension(
-            name="torchgis._en",
+            name="torch_delaunay._C",
             sources=[
-                "src/en/triangle.cc",
-                "src/en/predicates.cc",
-                "torchgis/__bind__/en.cc",
+                "src/triangle.cc",
+                "src/predicates.cc",
+                "torch_delaunay/__bind__/python_module.cc",
             ],
             include_dirs=[
                 str(Path.cwd() / "include"),
