@@ -1,5 +1,5 @@
 from pathlib import Path
-from setuptools import setup, Extension
+from setuptools import setup
 from torch.utils.cpp_extension import CppExtension, BuildExtension
 
 setup(
