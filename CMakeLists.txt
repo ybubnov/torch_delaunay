@@ -19,6 +19,9 @@ include_directories(src)
 
 aux_source_directory(src torch_delaunay_SOURCES)
 
+# Add the testing directory.
+add_subdirectory(test)
+
 
 add_library(torch_delaunay SHARED ${torch_delaunay_SOURCES})
 set_target_properties(torch_delaunay PROPERTIES CXX_STANDARD 17)

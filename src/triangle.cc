@@ -80,7 +80,7 @@ _lawson_flip_out(
     auto index_twin = halfedges.index_select(0, pl).index_select(1, pr);
     std::cout << "OPPOSITE" << std::endl << index_twin.to_dense() << std::endl;
 
-    // TODO: implement diag for sparse coo tensor.
+    // TODO: implement diag for sparse coordinate tensor.
     auto twins = index_twin.to_dense().diag();
     twins = twins - 1;
     std::cout << "TWINS" << std::endl << twins << std::endl;
@@ -267,8 +267,7 @@ shull2d(const torch::Tensor& points)
     // Find the third point such that forms the smallest circumcircle with i0 and i1.
     {
         // const auto radiuses = torch_delaunay::en::circumradius2d(points, p0, p1);
-        const auto radiuses
-            = circumradius2d(p0.repeat({n, 1}), p1.repeat({n, 1}), points);
+        const auto radiuses = circumradius2d(p0.repeat({n, 1}), p1.repeat({n, 1}), points);
 
         torch::Tensor values, indices;
         std::tie(values, indices)
@@ -420,9 +419,8 @@ shull2d(const torch::Tensor& points)
                 }
 
                 // Add a new triangle.
-                print_triangle("Te", iq, i, ie);
-                std::cout << "  te " << orient2d(pi, pq, pe)[0].item<int64_t>()
-                          << std::endl;
+                print_triangle("T_e", iq, i, ie);
+                std::cout << "  t_e " << orient2d(pi, pq, pe)[0].item<int64_t>() << std::endl;
 
                 faces.push_back(iq.item<int64_t>());
                 faces.push_back(ie.item<int64_t>());
