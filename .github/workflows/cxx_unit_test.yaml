@@ -1,0 +1,53 @@
+name: CXX Unit Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-22.04
+    container:
+      image: ubuntu:22.04
+
+    steps:
+    - name: Checkout source code
+      id: checkout
+      uses: actions/checkout@v4
+
+    - name: Configure apt to disable recommendations installation
+      id: configure_apt
+      run: |
+        echo 'APT::Install-Recommends "false";' >> /etc/apt/apt.conf
+        echo 'APT::Install-Suggests "false";' >> /etc/apt/apt.conf
+
+    - name: Install third-party libraries and tools
+      id: install_packages
+      run: |
+        apt-get update
+        apt-get install -y cmake build-essential libboost-test-dev libfmt-dev wget unzip
+        apt-get install -y python3-pip python3-numpy
+
+    - name: Install python libraries
+      id: install_torch
+      run: pip3 install 'torch>=2.2.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+
+    - name: Find PyTorch cmake prefix path
+      id: find_torch
+      run: >
+        echo "cmake_prefix_path=$(python3 -c 'import torch; print(torch.utils.cmake_prefix_path)')"
+        >> $GITHUB_OUTPUT
+
+    - name: Configure CMake
+      run: >
+        cmake
+        -DCMAKE_PREFIX_PATH=${{steps.find_torch.outputs.cmake_prefix_path}}
+        -B ${{github.workspace}}/build
+
+    - name: Build CXX library
+      run: cmake --build ${{github.workspace}}/build
+
+    - name: Run unit-tests
+      run: make -C ${{github.workspace}}/build test ARGS="--verbose" BOOST_TEST_LOG_LEVEL="test_suite"
