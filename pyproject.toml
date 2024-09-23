@@ -1,0 +1,117 @@
+[project]
+name = "torch-delaunay"
+dynamic = ["version"]
+license = {file = "LICENSE"}
+
+description = "The Delaunay triangulation for PyTorch"
+authors = [
+  {name = "Yakau Bubnou", email = "girokompass@gmail.com"}
+]
+
+readme = "README.md"
+requires-python = ">=3.9"
+
+# See https://pypi.python.org/pypi?%3Aaction=list_classifiers
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Operating System :: POSIX",
+  "Operating System :: Unix",
+  "Operating System :: MacOS"
+]
+
+dependencies = ["shapely>=2.0.0", "torch >= 2.3.0, < 2.4.0"]
+
+
+[project.urls]
+Funding = "https://github.com/sponsors/ybubnov"
+Homepage = "https://github.com/ybubnov/torch_delaunay"
+Source = "https://github.com/ybubnov/torch_delaunay"
+
+
+[project.optional-dependencies]
+test = [
+  "pytest >= 8.0.0",
+  "shapely >= 2.0.0",
+  "numpy >= 1.4.0, <2.0.0"
+]
+
+
+[tool.setuptools.dynamic]
+version = {attr = "torch_delaunay.__version__"}
+
+
+[tool.setuptools.packages.find]
+include = ["torch_delaunay*"]
+
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [
+  "auditwheel >= 6.0.0",
+  "cibuildwheel >= 2.0.0",
+  "ninja >= 1.0.0",
+  "numpy >= 1.4.0, < 2.0.0",
+  "pybind11 >= 2.0.0, < 3.0.0",
+  "setuptools ~= 70.0.0",
+  "torch >= 2.3.0, < 2.4.0; sys_platform == 'linux'",
+  "torch >= 2.3.0, < 2.4.0; sys_platform == 'darwin' or sys_platform == 'win'",
+  "typing-extensions >= 4.8.0",
+  "wheel >= 0.43.0"
+]
+
+
+# Configuration for Ruff linting and automatic formatting tool.
+# See more in documentation for Ruff: https://docs.astral.sh/ruff/
+[tool.ruff]
+line-length = 100
+
+[tool.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.codespell]
+skip = "*.ipynb"
+
+
+# Configuration to build wheels for different version of python, operating systems and
+# architectures. See more in documentation: https://cibuildwheel.pypa.io/en/stable/options/
+[tool.cibuildwheel]
+build = "cp39-* cp310-* cp311-* cp312-*"
+build-verbosity = 3
+skip = "*-musllinux_*"
+repair-wheel-command = ""
+
+# Try to find necessary dependencies (primarily torch) from torch index at first,
+# and only then access Python's index for the remaining dependencies.
+[tool.cibuildwheel.environment]
+PIP_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+PIP_EXTRA_INDEX_URL = "https://pypi.python.org/simple"
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
+
+[tool.cibuildwheel.linux]
+archs = ["aarch64", "x86_64"]
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
+repair-wheel-command = """\
+    auditwheel repair --only-plat \
+        --exclude libc10.so \
+        --exclude libtorch.so \
+        --exclude libtorch_cpu.so \
+        --exclude libtorch_python.so \
+        -w {dest_dir} {wheel} \
+    """

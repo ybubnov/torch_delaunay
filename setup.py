@@ -3,9 +3,6 @@ from setuptools import setup
 from torch.utils.cpp_extension import CppExtension, BuildExtension
 
 setup(
-    name="torchgis",
-    package_dir={"torchgis": "torchgis"},
-    packages=["torchgis"],
     ext_modules=[
         CppExtension(
             name="torch_delaunay._C",

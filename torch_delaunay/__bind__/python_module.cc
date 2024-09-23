@@ -6,11 +6,7 @@
 namespace torch_delaunay {
 
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
-{
-    m.def("lawson_flip", &lawson_flip);
-    m.def("shull2d", &shull2d);
-};
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("shull2d", &shull2d); };
 
 
 } // namespace torch_delaunay
