@@ -160,32 +160,76 @@ lawson_flip(const torch::Tensor& triangles, const torch::Tensor& points)
 
 
 struct _SHull {
-    std::vector<torch::Tensor> hash;
+    std::vector<int64_t> hash;
+    std::vector<int64_t> triangles;
+    std::vector<int64_t> halfedges;
+    std::vector<int64_t> tri;
     std::int64_t hash_size;
 
-    torch::Tensor next;
-    torch::Tensor prev;
+    std::vector<int64_t> next;
+    std::vector<int64_t> prev;
 
     double center_x;
     double center_y;
+    int64_t start;
 
     _SHull(int64_t n, double x, double y)
     : hash(),
+      triangles(),
+      halfedges(),
+      tri(n, -1),
       hash_size(),
-      next(),
-      prev(),
+      next(n, -1),
+      prev(n, -1),
       center_x(),
-      center_y()
+      center_y(),
+      start(0)
     {
         hash_size = static_cast<int64_t>(std::llround(std::ceil(std::sqrt(n))));
         hash.resize(hash_size);
-        std::fill(hash.begin(), hash.end(), torch::tensor(-1));
-
-        next = torch::full({n}, -1, torch::dtype(torch::kInt64));
-        prev = torch::full({n}, -1, torch::dtype(torch::kInt64));
+        std::fill(hash.begin(), hash.end(), -1);
 
         center_x = x;
         center_y = y;
+    }
+
+    std::size_t
+    push_tri(int64_t i0, int64_t i1, int64_t i2, int64_t a, int64_t b, int64_t c)
+    {
+        auto t = triangles.size();
+        triangles.push_back(i0);
+        triangles.push_back(i1);
+        triangles.push_back(i2);
+        link(t, a);
+        link(t + 1, b);
+        link(t + 2, c);
+        return t;
+    }
+
+    void
+    link(int64_t a, int64_t b)
+    {
+        auto num_halfedges = halfedges.size();
+        if (a == num_halfedges) {
+            halfedges.push_back(b);
+        } else if (a < num_halfedges) {
+            halfedges[a] = b;
+        } else {
+            throw std::runtime_error("cannot link the edge");
+        }
+
+        if (b == -1) {
+            return;
+        }
+
+        num_halfedges = halfedges.size();
+        if (b == num_halfedges) {
+            halfedges.push_back(a);
+        } else if (b < num_halfedges) {
+            halfedges[b] = a;
+        } else {
+            throw std::runtime_error("cannot link the edge");
+        }
     }
 
     int64_t
@@ -208,28 +252,97 @@ struct _SHull {
         return static_cast<std::int64_t>(k) % hash_size;
     }
 
-    torch::Tensor
-    get(const int64_t key) const
+    int64_t
+    get(int64_t key) const
     {
         return hash[key % hash_size];
     }
 
     void
-    set(const int64_t key, torch::Tensor val)
+    set(int64_t key, int64_t val)
     {
         hash[key] = val;
     }
+
+    std::size_t
+    flip(int64_t a, const torch::Tensor& points)
+    {
+        int64_t i = 0;
+        int64_t ar = 0;
+
+        // TODO: is it possible to replace this with a list<int64_t>?
+        std::vector<int64_t> edge_stack;
+        while (true) {
+            auto b = halfedges[a];
+
+            auto a0 = 3 * (a / 3);
+            ar = a0 + (a + 2) % 3;
+
+            if (b == -1) {
+                if (i > 0) {
+                    i--;
+                    a = edge_stack[i];
+                    continue;
+                } else {
+                    break;
+                }
+            }
+
+            auto b0 = 3 * (b / 3);
+            auto al = a0 + (a + 1) % 3;
+            auto bl = b0 + (b + 2) % 3;
+
+            auto p0 = points[triangles[ar]].unsqueeze(0);
+            auto pr = points[triangles[a]].unsqueeze(0);
+            auto pl = points[triangles[al]].unsqueeze(0);
+            auto p1 = points[triangles[bl]].unsqueeze(0);
+
+            // TODO: is it >0 or <0?
+            if (incircle2d(p0, pr, pl, p1).gt(0).all().item<bool>()) {
+                triangles[a] = triangles[bl];
+                triangles[b] = triangles[ar];
+
+                auto h_bl = halfedges[bl];
+
+                if (h_bl == -1) {
+                    auto ie = start;
+                    do {
+                        if (tri[ie] == bl) {
+                            tri[ie] = a;
+                            break;
+                        }
+
+                        ie = prev[ie];
+                    } while (ie != start);
+                }
+
+                link(a, h_bl);
+                link(b, halfedges[ar]);
+                link(ar, bl);
+
+                auto br = b0 + (b + 1) % 3;
+
+                if (i < edge_stack.size()) {
+                    edge_stack[i] = br;
+                } else {
+                    edge_stack.push_back(br);
+                }
+
+                i++;
+            } else {
+                if (i > 0) {
+                    i--;
+                    a = edge_stack[i];
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        return ar;
+    }
 };
-
-
-void
-print_triangle(
-    const char* name, const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2
-)
-{
-    std::cout << name << ": " << p0.item<int64_t>() << " " << p1.item<int64_t>() << " "
-              << p2.item<int64_t>() << std::endl;
-}
 
 
 torch::Tensor
@@ -238,53 +351,47 @@ shull2d(const torch::Tensor& points)
     TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got: ", points.dim(), "D");
 
     // Indices of the seed triangle.
-    torch::Tensor i0, i1, i2;
+    torch::Tensor index0, index1, index2;
     const auto n = points.size(0);
+    std::cout << "points: " << points << std::endl;
 
     // Choose seed points close to a centroid of the point cloud.
     {
-        torch::Tensor min, max;
-        std::tie(min, max) = points.aminmax(0);
+        auto [min, max] = points.aminmax(0);
 
         const auto centroid = (max + min) / 2;
         std::cout << "centroid: " << centroid << std::endl;
         const auto dists = torch_delaunay::dist(points, centroid);
         std::cout << "dists: " << dists << std::endl;
 
-        torch::Tensor values, indices;
-        std::tie(values, indices)
-            = at::topk(dists, 2, /*dim=*/-1, /*largest=*/false, /*sorted=1*/ true);
+        auto [values, indices] = at::topk(dists, 2, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
 
-        i0 = indices[0];
-        i1 = indices[1];
+        index0 = indices[0];
+        index1 = indices[1];
     }
 
-    std::cout << "i0: " << i0.item<int64_t>() << " i1: " << i1.item<int64_t>() << std::endl;
-
-    auto p0 = points[i0].unsqueeze(0);
-    auto p1 = points[i1].unsqueeze(0);
+    auto p0 = points[index0].unsqueeze(0);
+    auto p1 = points[index1].unsqueeze(0);
 
     // Find the third point such that forms the smallest circumcircle with i0 and i1.
     {
-        // const auto radiuses = torch_delaunay::en::circumradius2d(points, p0, p1);
-        const auto radiuses = circumradius2d(p0.repeat({n, 1}), p1.repeat({n, 1}), points);
+        // TODO: repeat increases the space, consider using broadcast operations.
+        const auto radii = circumradius2d(p0.repeat({n, 1}), p1.repeat({n, 1}), points);
 
-        torch::Tensor values, indices;
-        std::tie(values, indices)
-            = at::topk(radiuses, 3, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
-        std::cout << "radiuses: " << radiuses << std::endl;
+        auto [values, indices] = at::topk(radii, 3, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
+        std::cout << "radii: " << radii << std::endl;
         std::cout << "circumradius/indices: " << indices << std::endl;
-        i2 = indices[0];
+
+        // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
+        // at 0 index will be a point with the minimum radius.
+        index2 = indices[0];
     }
 
-    auto p2 = points[i2].unsqueeze(0);
-
-    // i1 = torch::tensor(2, torch::dtype(torch::kInt64));
-    // p1 = points[i1].unsqueeze(0);
+    auto p2 = points[index2].unsqueeze(0);
 
     if (all_counterclockwise2d(p0, p1, p2)) {
         std::cout << "swapped" << std::endl;
-        std::swap(i1, i2);
+        std::swap(index1, index2);
         std::swap(p1, p2);
     }
 
@@ -293,71 +400,65 @@ shull2d(const torch::Tensor& points)
     // Radially resort the points.
     const auto center = circumcenter2d(p0, p1, p2);
 
-    // std::cout << "circumcenter: " << center << std::endl;
-    // std::cout << "distances: " << torch_delaunay::en::dist(points, center) << std::endl;
     const auto ordering = at::argsort(torch_delaunay::dist(points, center));
-    // std::cout << "ordering: " << ordering << std::endl;
 
     _SHull hull(n, center.index({0, 0}).item<float>(), center.index({0, 1}).item<float>());
 
     std::cout << "hull created" << std::endl;
 
-    i0 = i0.clone();
-    i1 = i1.clone();
-    i2 = i2.clone();
+    auto i0 = index0.item<int64_t>();
+    auto i1 = index1.item<int64_t>();
+    auto i2 = index2.item<int64_t>();
+
+    hull.start = i0;
 
     hull.set(hull.key(p0), i0);
     hull.set(hull.key(p1), i1);
     hull.set(hull.key(p2), i2);
 
-    std::cout << "hash: " << hull.hash << std::endl;
+    hull.next[i0] = i1;
+    hull.next[i1] = i2;
+    hull.next[i2] = i0;
 
-    hull.next.index_put_({i0}, i1);
-    hull.next.index_put_({i1}, i2);
-    hull.next.index_put_({i2}, i0);
+    hull.prev[i0] = i2;
+    hull.prev[i1] = i0;
+    hull.prev[i2] = i1;
 
-    hull.prev.index_put_({i0}, i2);
-    hull.prev.index_put_({i1}, i0);
-    hull.prev.index_put_({i2}, i1);
+    hull.tri[i0] = 0;
+    hull.tri[i1] = 1;
+    hull.tri[i2] = 2;
 
-    std::cout << "HULL NEXT: \n" << hull.next << std::endl;
-    std::cout << "HULL PREV: \n" << hull.prev << std::endl;
-    std::vector<int64_t> faces;
-
-    print_triangle("Ts", i0, i1, i2);
-    faces.push_back(i0.item<int64_t>());
-    faces.push_back(i2.item<int64_t>());
-    faces.push_back(i1.item<int64_t>());
+    std::cout << "seed: " << i0 << "," << i1 << "," << i2 << std::endl;
+    hull.push_tri(i0, i1, i2, -1, -1, -1);
 
     for (const auto k : c10::irange(n)) {
-        auto i = ordering.index({k});
-        const auto pi = points.index({i}).unsqueeze(0);
+        auto i = ordering[k].item<int64_t>();
+        const auto pi = points[i].unsqueeze(0);
 
-        std::cout << "processing " << i.item<int64_t>() << " (" << pi[0][0].item<float>() << ","
-                  << pi[0][1].item<float>() << ")" << std::endl;
-
-        if ((i == i0).all().item<bool>() || (i == i1).all().item<bool>()
-            || (i == i2).all().item<bool>()) {
+        // Skip points of the seed triangle, they are already part of the final hull.
+        if (i == i0 || i == i1 || i == i2) {
             continue;
         }
 
         const auto key = hull.key(pi);
 
-        torch::Tensor is = torch::tensor(0, torch::dtype(torch::kInt64));
+        int64_t is = 0;
         for (int64_t j = 0; j < hull.size(); j++) {
             is = hull.get(key + j);
             std::cout << "next key: " << (key + j) << std::endl;
-            if (is.ne(-1).all().item<bool>() && is.ne(hull.next[is]).all().item<bool>()) {
+            if (is != -1 && is != hull.next[is]) {
                 break;
             }
         }
 
-        std::cout << "is: " << is.item<int64_t>() << " -> " << hull.prev[is].item<int64_t>()
-                  << std::endl;
-        is = hull.prev[is];
-        auto ie = is;
-        auto iq = is;
+        // TODO: Make sure what we found is on the hull?
 
+        // TODO: correct up to this point.
+        is = hull.prev[is];
+        int64_t ie = is;
+        int64_t iq = is;
+
+        // Advance until we find a place in the hull were the current point can be added.
         torch::Tensor pe, pn, pq;
         while (true) {
             ie = iq;
@@ -365,24 +466,27 @@ shull2d(const torch::Tensor& points)
 
             pe = points[ie].unsqueeze(0);
             pq = points[iq].unsqueeze(0);
-            print_triangle("  ti", i, ie, hull.next[ie]);
 
             if (all_counterclockwise2d(pi, pe, pq)) {
                 break;
             }
         }
 
-        faces.push_back(ie.item<int64_t>());
-        faces.push_back(hull.next[ie].item<int64_t>());
-        faces.push_back(i.item<int64_t>());
+        // TODO: Likely a near-duplicate?
+        assert(ie != -1);
 
-        print_triangle("Ti", ie, i, hull.next[ie]);
+        // TODO: triangles.push_back is missing method `link`.
+        auto it = hull.push_tri(ie, i, hull.next[ie], -1, -1, hull.tri[ie]);
+        hull.tri[i] = hull.flip(it + 2, points);
+        hull.tri[ie] = it;
 
-        // Traverse forward.
+
+        // Traverse forward through the hull, adding more triangles and flipping
+        // them recursively.
         auto in = hull.next[ie];
 
         while (true) {
-            iq = hull.next[in].clone();
+            iq = hull.next[in];
 
             pn = points[in].unsqueeze(0);
             pq = points[iq].unsqueeze(0);
@@ -391,66 +495,50 @@ shull2d(const torch::Tensor& points)
                 break;
             }
 
-            // Add a new triangle.
-            print_triangle("Tn", in, i, iq);
+            auto it = hull.push_tri(in, i, iq, hull.tri[i], -1, hull.tri[in]);
+            hull.tri[i] = hull.flip(it + 2, points);
 
-            faces.push_back(in.item<int64_t>());
-            faces.push_back(iq.item<int64_t>());
-            faces.push_back(i.item<int64_t>());
-
-            in = in.clone();
-            hull.next.index_put_({in}, in);
-            in = iq.clone();
-
-            print_triangle(" tn", in, i, iq);
+            hull.next[in] = in;
+            in = iq;
         }
 
-        if ((ie == is).all().item<bool>()) {
+        // Traverse backward through the hull, adding more triangles and flipping
+        // them recursively.
+        if (ie == is) {
             iq = is;
 
             while (true) {
-                iq = hull.prev[ie].clone();
+                iq = hull.prev[ie];
 
-                pe = points[ie].unsqueeze(0);
                 pq = points[iq].unsqueeze(0);
+                pe = points[ie].unsqueeze(0);
 
                 if (!all_counterclockwise2d(pi, pq, pe)) {
                     break;
                 }
 
-                // Add a new triangle.
-                print_triangle("T_e", iq, i, ie);
-                std::cout << "  t_e " << orient2d(pi, pq, pe)[0].item<int64_t>() << std::endl;
+                auto it = hull.push_tri(iq, i, ie, -1, hull.tri[ie], hull.tri[iq]);
+                hull.flip(it + 2, points);
+                hull.tri[iq] = it;
 
-                faces.push_back(iq.item<int64_t>());
-                faces.push_back(ie.item<int64_t>());
-                faces.push_back(i.item<int64_t>());
-
-                ie = ie.clone();
-                hull.next.index_put_({ie}, ie.clone());
-                ie = iq.clone();
+                hull.next[ie] = ie;
+                ie = iq;
             }
         }
 
-        i = i.clone();
-        ie = ie.clone();
-        in = in.clone();
-
-        hull.prev.index_put_({i}, ie);
-        hull.prev.index_put_({in}, i);
-        hull.next.index_put_({ie}, i);
-        hull.next.index_put_({i}, in);
-        std::cout << "HULL (next): " << hull.next << std::endl;
-        std::cout << "HULL (prev): " << hull.prev << std::endl;
+        hull.start = ie;
+        hull.prev[i] = ie;
+        hull.prev[in] = i;
+        hull.next[ie] = i;
+        hull.next[i] = in;
 
         hull.set(key, i);
         hull.set(hull.key(points[ie].unsqueeze(0)), ie);
     }
 
-    const auto tn = static_cast<int64_t>(faces.size() / 3);
-
+    const auto tn = static_cast<int64_t>(hull.triangles.size() / 3);
     const auto opts = torch::dtype(torch::kInt64);
-    return at::from_blob(faces.data(), {tn, 3}, opts).clone();
+    return at::from_blob(hull.triangles.data(), {tn, 3}, opts);
 }
 
 
