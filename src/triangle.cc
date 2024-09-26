@@ -185,13 +185,13 @@ struct _SHull {
             int64_t a = edge_stack.top();
             edge_stack.pop();
 
+            auto a0 = 3 * (a / 3);
+            ar = a0 + (a + 2) % 3;
+
             auto b = halfedges[a];
             if (b == -1) {
                 continue;
             }
-
-            auto a0 = 3 * (a / 3);
-            ar = a0 + (a + 2) % 3;
 
             auto b0 = 3 * (b / 3);
             auto al = a0 + (a + 1) % 3;
@@ -227,6 +227,7 @@ struct _SHull {
                 auto br = b0 + (b + 1) % 3;
 
                 edge_stack.push(br);
+                edge_stack.push(a);
             }
         }
 
