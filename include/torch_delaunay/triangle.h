@@ -22,8 +22,4 @@ torch::Tensor
 shull2d(const torch::Tensor& points);
 
 
-torch::Tensor
-lawson_flip(const torch::Tensor& triangles, const torch::Tensor& points);
-
-
 } // namespace torch_delaunay
