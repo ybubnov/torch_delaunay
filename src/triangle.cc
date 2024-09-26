@@ -66,99 +66,6 @@ dist(const torch::Tensor& p, const torch::Tensor& q)
 }
 
 
-void
-_lawson_flip_out(
-    const torch::Tensor& triangles,
-    const torch::Tensor& halfedges,
-    const torch::Tensor& points,
-    const torch::Tensor& pr,
-    const torch::Tensor& pl,
-    const torch::Tensor& p0,
-    torch::Tensor& out
-)
-{
-    auto index_twin = halfedges.index_select(0, pl).index_select(1, pr);
-    std::cout << "OPPOSITE" << std::endl << index_twin.to_dense() << std::endl;
-
-    // TODO: implement diag for sparse coordinate tensor.
-    auto twins = index_twin.to_dense().diag();
-    twins = twins - 1;
-    std::cout << "TWINS" << std::endl << twins << std::endl;
-
-    twins = torch::where(twins.ne(-1), twins, p0);
-    std::cout << "TWINS (defaulted)" << std::endl << twins << std::endl;
-
-    // torch::Tensor p1 = triangles.index({twins - 1, dim});
-    const auto p1 = twins;
-    std::cout << "P1: " << p1 << std::endl;
-
-    const auto incircle = incircle2d(
-        points.index({p0}), points.index({pr}), points.index({pl}), points.index({p1})
-    );
-    // std::cout << "IN CIRCLE" << std::endl << incircle << std::endl;
-    std::cout << "PP: " << torch::column_stack({p0, pr, pl, p1, incircle}) << std::endl;
-
-    for (int64_t i = 0; i < out.sizes()[0]; i++) {
-        if ((incircle[i].item<int64_t>() > 0)) {
-            std::cout << "flip " << i << std::endl;
-            out.index_put_({i, 0}, p0[i].item<int64_t>());
-            out.index_put_({i, 1}, pr[i].item<int64_t>());
-            out.index_put_({i, 2}, p1[i].item<int64_t>());
-        }
-    }
-}
-
-
-torch::Tensor
-lawson_flip(const torch::Tensor& triangles, const torch::Tensor& points)
-{
-    torch::Tensor out = triangles.clone();
-
-    const auto n = triangles.size(0);
-
-    torch::Tensor he_indices = torch::full({2, n * 3}, -1, triangles.options());
-    torch::Tensor he_values = torch::full({n * 3}, -1, triangles.options());
-
-    for (const auto i : c10::irange(n)) {
-        auto v0 = triangles.index({i, 0}).item<int64_t>();
-        auto v1 = triangles.index({i, 1}).item<int64_t>();
-        auto v2 = triangles.index({i, 2}).item<int64_t>();
-
-        std::cout << i;
-        he_indices.index_put_({0, i * 3 + 0}, v0);
-        he_indices.index_put_({1, i * 3 + 0}, v1);
-
-        he_indices.index_put_({0, i * 3 + 1}, v1);
-        he_indices.index_put_({1, i * 3 + 1}, v2);
-
-        he_indices.index_put_({0, i * 3 + 2}, v2);
-        he_indices.index_put_({1, i * 3 + 2}, v0);
-        std::cout << " ind... ";
-
-        he_values.index_put_({i * 3 + 0}, v2 + 1);
-        he_values.index_put_({i * 3 + 1}, v0 + 1);
-        he_values.index_put_({i * 3 + 2}, v1 + 1);
-        std::cout << "vals..." << std::endl;
-    }
-
-    const auto halfedges = torch::sparse_coo_tensor(he_indices, he_values);
-    std::cout << "REV INDEX" << std::endl << halfedges.to_dense() << std::endl;
-
-    torch::Tensor pr = triangles.index({Slice(), 0}).contiguous();
-    torch::Tensor pl = triangles.index({Slice(), 1}).contiguous();
-    torch::Tensor p0 = triangles.index({Slice(), 2}).contiguous();
-
-    _lawson_flip_out(triangles, halfedges, points, pr, pl, p0, out);
-    std::cout << "OUT" << std::endl << out << std::endl;
-    _lawson_flip_out(triangles, halfedges, points, p0, pr, pl, out);
-    std::cout << "OUT" << std::endl << out << std::endl;
-    _lawson_flip_out(triangles, halfedges, points, pl, p0, pr, out);
-    std::cout << "OUT" << std::endl << out << std::endl;
-
-    return out;
-}
-
-
 struct _SHull {
     std::vector<int64_t> hash;
     std::vector<int64_t> triangles;
@@ -297,8 +204,7 @@ struct _SHull {
             auto pl = points[triangles[al]].unsqueeze(0);
             auto p1 = points[triangles[bl]].unsqueeze(0);
 
-            // TODO: is it >0 or <0?
-            if (incircle2d(p0, pr, pl, p1).gt(0).all().item<bool>()) {
+            if (incircle2d(p0, pr, pl, p1).lt(0).all().item<bool>()) {
                 triangles[a] = triangles[bl];
                 triangles[b] = triangles[ar];
 
@@ -536,9 +442,9 @@ shull2d(const torch::Tensor& points)
         hull.set(hull.key(points[ie].unsqueeze(0)), ie);
     }
 
-    const auto tn = static_cast<int64_t>(hull.triangles.size() / 3);
-    const auto opts = torch::dtype(torch::kInt64);
-    return at::from_blob(hull.triangles.data(), {tn, 3}, opts);
+    int64_t tn = hull.triangles.size() / 3;
+    auto answer = torch::tensor(hull.triangles, torch::TensorOptions().dtype(torch::kInt64));
+    return answer.reshape({tn, 3});
 }
 
 

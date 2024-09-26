@@ -42,9 +42,10 @@ Source = "https://github.com/ybubnov/torch_delaunay"
 
 [project.optional-dependencies]
 test = [
+  "geopandas >= 1.0.0",
+  "numpy >= 1.4.0, <2.0.0",
   "pytest >= 8.0.0",
   "shapely >= 2.0.0",
-  "numpy >= 1.4.0, <2.0.0"
 ]
 
 
