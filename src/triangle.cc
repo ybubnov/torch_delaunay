@@ -1,3 +1,5 @@
+#include <stack>
+
 #include <torch_delaunay/predicates.h>
 #include <torch_delaunay/triangle.h>
 
@@ -104,12 +106,14 @@ struct _SHull {
     push_tri(int64_t i0, int64_t i1, int64_t i2, int64_t a, int64_t b, int64_t c)
     {
         auto t = triangles.size();
+
         triangles.push_back(i0);
         triangles.push_back(i1);
         triangles.push_back(i2);
         link(t, a);
         link(t + 1, b);
         link(t + 2, c);
+
         return t;
     }
 
@@ -174,26 +178,20 @@ struct _SHull {
     std::size_t
     flip(int64_t a, const torch::Tensor& points)
     {
-        int64_t i = 0;
         int64_t ar = 0;
+        std::stack<int64_t> edge_stack({a});
 
-        // TODO: is it possible to replace this with a list<int64_t>?
-        std::vector<int64_t> edge_stack;
-        while (true) {
+        while (edge_stack.size() > 0) {
+            int64_t a = edge_stack.top();
+            edge_stack.pop();
+
             auto b = halfedges[a];
+            if (b == -1) {
+                continue;
+            }
 
             auto a0 = 3 * (a / 3);
             ar = a0 + (a + 2) % 3;
-
-            if (b == -1) {
-                if (i > 0) {
-                    i--;
-                    a = edge_stack[i];
-                    continue;
-                } else {
-                    break;
-                }
-            }
 
             auto b0 = 3 * (b / 3);
             auto al = a0 + (a + 1) % 3;
@@ -228,21 +226,7 @@ struct _SHull {
 
                 auto br = b0 + (b + 1) % 3;
 
-                if (i < edge_stack.size()) {
-                    edge_stack[i] = br;
-                } else {
-                    edge_stack.push_back(br);
-                }
-
-                i++;
-            } else {
-                if (i > 0) {
-                    i--;
-                    a = edge_stack[i];
-                    continue;
-                } else {
-                    break;
-                }
+                edge_stack.push(br);
             }
         }
 
@@ -359,7 +343,6 @@ shull2d(const torch::Tensor& points)
 
         // TODO: Make sure what we found is on the hull?
 
-        // TODO: correct up to this point.
         is = hull.prev[is];
         int64_t ie = is;
         int64_t iq = is;
@@ -381,7 +364,6 @@ shull2d(const torch::Tensor& points)
         // TODO: Likely a near-duplicate?
         assert(ie != -1);
 
-        // TODO: triangles.push_back is missing method `link`.
         auto it = hull.push_tri(ie, i, hull.next[ie], -1, -1, hull.tri[ie]);
         hull.tri[i] = hull.flip(it + 2, points);
         hull.tri[ie] = it;
