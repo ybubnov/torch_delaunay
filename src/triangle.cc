@@ -106,13 +106,7 @@ struct _SHull {
     }
 
     int64_t
-    size() const
-    {
-        return hash_size;
-    }
-
-    int64_t
-    key(const torch::Tensor& p) const
+    hash_key(const torch::Tensor& p) const
     {
         const auto dx = p[0][0].item<float>() - center_x;
         const auto dy = p[0][1].item<float>() - center_y;
@@ -126,9 +120,21 @@ struct _SHull {
     }
 
     int64_t
-    get(int64_t key) const
+    find_visible_edge(const torch::Tensor& point) const
     {
-        return hash[key % hash_size];
+        const auto key = hash_key(point);
+        int64_t edge_index = 0;
+
+        for (int64_t j = 0; j < hash_size; j++) {
+            edge_index = hash[(key + j) % hash_size];
+
+            // TODO: why edge_index could be equal to next[edge_index]?
+            if (edge_index != -1 && edge_index != next[edge_index]) {
+                break;
+            }
+        }
+
+        return edge_index;
     }
 
     void
@@ -308,9 +314,9 @@ shull2d(const torch::Tensor& points)
 
     hull.start = i0;
 
-    hull.set(hull.key(p0), i0);
-    hull.set(hull.key(p1), i1);
-    hull.set(hull.key(p2), i2);
+    hull.set(hull.hash_key(p0), i0);
+    hull.set(hull.hash_key(p1), i1);
+    hull.set(hull.hash_key(p2), i2);
 
     hull.next[i0] = i1;
     hull.next[i1] = i2;
@@ -336,16 +342,7 @@ shull2d(const torch::Tensor& points)
             continue;
         }
 
-        const auto key = hull.key(pi);
-
-        int64_t is = 0;
-        for (int64_t j = 0; j < hull.size(); j++) {
-            is = hull.get(key + j);
-            std::cout << "next key: " << (key + j) << std::endl;
-            if (is != -1 && is != hull.next[is]) {
-                break;
-            }
-        }
+        int64_t is = hull.find_visible_edge(pi);
 
         // TODO: Make sure what we found is on the hull?
 
@@ -425,8 +422,8 @@ shull2d(const torch::Tensor& points)
         hull.next[ie] = i;
         hull.next[i] = in;
 
-        hull.set(key, i);
-        hull.set(hull.key(points[ie].unsqueeze(0)), ie);
+        hull.set(hull.hash_key(points[i].unsqueeze(0)), i);
+        hull.set(hull.hash_key(points[ie].unsqueeze(0)), ie);
     }
 
     int64_t tn = hull.triangles.size() / 3;
