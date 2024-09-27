@@ -82,7 +82,9 @@ struct _SHull {
     double center_y;
     int64_t start;
 
-    _SHull(int64_t n, double x, double y)
+    const torch::Tensor& m_points;
+
+    _SHull(int64_t n, double x, double y, const torch::Tensor& points)
     : hash(),
       triangles(),
       halfedges(),
@@ -92,7 +94,8 @@ struct _SHull {
       prev(n, -1),
       center_x(),
       center_y(),
-      start(0)
+      start(0),
+      m_points(points)
     {
         hash_size = static_cast<int64_t>(std::llround(std::ceil(std::sqrt(n))));
         hash.resize(hash_size);
@@ -100,47 +103,6 @@ struct _SHull {
 
         center_x = x;
         center_y = y;
-    }
-
-    std::size_t
-    push_tri(int64_t i0, int64_t i1, int64_t i2, int64_t a, int64_t b, int64_t c)
-    {
-        auto t = triangles.size();
-
-        triangles.push_back(i0);
-        triangles.push_back(i1);
-        triangles.push_back(i2);
-        link(t, a);
-        link(t + 1, b);
-        link(t + 2, c);
-
-        return t;
-    }
-
-    void
-    link(int64_t a, int64_t b)
-    {
-        auto num_halfedges = halfedges.size();
-        if (a == num_halfedges) {
-            halfedges.push_back(b);
-        } else if (a < num_halfedges) {
-            halfedges[a] = b;
-        } else {
-            throw std::runtime_error("cannot link the edge");
-        }
-
-        if (b == -1) {
-            return;
-        }
-
-        num_halfedges = halfedges.size();
-        if (b == num_halfedges) {
-            halfedges.push_back(a);
-        } else if (b < num_halfedges) {
-            halfedges[b] = a;
-        } else {
-            throw std::runtime_error("cannot link the edge");
-        }
     }
 
     int64_t
@@ -175,8 +137,51 @@ struct _SHull {
         hash[key] = val;
     }
 
+    std::tuple<int64_t, int64_t>
+    push_tri(int64_t i0, int64_t i1, int64_t i2, int64_t a, int64_t b, int64_t c)
+    {
+        auto t = triangles.size();
+
+        triangles.push_back(i0);
+        triangles.push_back(i1);
+        triangles.push_back(i2);
+        link(t, a);
+        link(t + 1, b);
+        link(t + 2, c);
+
+        // TODO: what does `x` mean?
+        auto x = flip(t + 2);
+        return std::make_tuple(t, x);
+    }
+
+    void
+    link(int64_t a, int64_t b)
+    {
+        auto num_halfedges = halfedges.size();
+        if (a == num_halfedges) {
+            halfedges.push_back(b);
+        } else if (a < num_halfedges) {
+            halfedges[a] = b;
+        } else {
+            throw std::runtime_error("cannot link the edge");
+        }
+
+        if (b == -1) {
+            return;
+        }
+
+        num_halfedges = halfedges.size();
+        if (b == num_halfedges) {
+            halfedges.push_back(a);
+        } else if (b < num_halfedges) {
+            halfedges[b] = a;
+        } else {
+            throw std::runtime_error("cannot link the edge");
+        }
+    }
+
     std::size_t
-    flip(int64_t a, const torch::Tensor& points)
+    flip(int64_t a)
     {
         int64_t ar = 0;
         std::stack<int64_t> edge_stack({a});
@@ -197,10 +202,10 @@ struct _SHull {
             auto al = a0 + (a + 1) % 3;
             auto bl = b0 + (b + 2) % 3;
 
-            auto p0 = points[triangles[ar]].unsqueeze(0);
-            auto pr = points[triangles[a]].unsqueeze(0);
-            auto pl = points[triangles[al]].unsqueeze(0);
-            auto p1 = points[triangles[bl]].unsqueeze(0);
+            auto p0 = m_points[triangles[ar]].unsqueeze(0);
+            auto pr = m_points[triangles[a]].unsqueeze(0);
+            auto pl = m_points[triangles[al]].unsqueeze(0);
+            auto p1 = m_points[triangles[bl]].unsqueeze(0);
 
             if (incircle2d(p0, pr, pl, p1).lt(0).all().item<bool>()) {
                 triangles[a] = triangles[bl];
@@ -293,7 +298,7 @@ shull2d(const torch::Tensor& points)
 
     const auto ordering = at::argsort(torch_delaunay::dist(points, center));
 
-    _SHull hull(n, center.index({0, 0}).item<float>(), center.index({0, 1}).item<float>());
+    _SHull hull(n, center.index({0, 0}).item<float>(), center.index({0, 1}).item<float>(), points);
 
     std::cout << "hull created" << std::endl;
 
@@ -365,9 +370,9 @@ shull2d(const torch::Tensor& points)
         // TODO: Likely a near-duplicate?
         assert(ie != -1);
 
-        auto it = hull.push_tri(ie, i, hull.next[ie], -1, -1, hull.tri[ie]);
-        hull.tri[i] = hull.flip(it + 2, points);
-        hull.tri[ie] = it;
+        auto [first_tri, last_tri] = hull.push_tri(ie, i, hull.next[ie], -1, -1, hull.tri[ie]);
+        hull.tri[i] = last_tri;
+        hull.tri[ie] = first_tri;
 
 
         // Traverse forward through the hull, adding more triangles and flipping
@@ -384,8 +389,8 @@ shull2d(const torch::Tensor& points)
                 break;
             }
 
-            auto it = hull.push_tri(in, i, iq, hull.tri[i], -1, hull.tri[in]);
-            hull.tri[i] = hull.flip(it + 2, points);
+            auto [_, last_tri] = hull.push_tri(in, i, iq, hull.tri[i], -1, hull.tri[in]);
+            hull.tri[i] = last_tri;
 
             hull.next[in] = in;
             in = iq;
@@ -406,9 +411,8 @@ shull2d(const torch::Tensor& points)
                     break;
                 }
 
-                auto it = hull.push_tri(iq, i, ie, -1, hull.tri[ie], hull.tri[iq]);
-                hull.flip(it + 2, points);
-                hull.tri[iq] = it;
+                auto [first_tri, _] = hull.push_tri(iq, i, ie, -1, hull.tri[ie], hull.tri[iq]);
+                hull.tri[iq] = first_tri;
 
                 hull.next[ie] = ie;
                 ie = iq;
