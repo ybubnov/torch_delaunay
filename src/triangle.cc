@@ -38,23 +38,24 @@ _cc_coordinates(const torch::Tensor& p0, const torch::Tensor& p1, const torch::T
 torch::Tensor
 circumcenter2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 {
-    TORCH_CHECK(p0.dim() == 2, "circumcenter2d only supports 2D tensors, got: ", p0.dim(), "D");
-    TORCH_CHECK(p1.dim() == 2, "circumcenter2d only supports 2D tensors, got: ", p1.dim(), "D");
-    TORCH_CHECK(p2.dim() == 2, "circumcenter2d only supports 2D tensors, got: ", p2.dim(), "D");
-
-    torch::Tensor ux, uy;
-    std::tie(ux, uy) = _cc_coordinates(p0, p1, p2);
-
+    auto [ux, uy] = _cc_coordinates(p0, p1, p2);
     return at::column_stack({ux, uy}) + p0;
 }
 
 
 torch::Tensor
+circumcenter(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
+{
+    auto center = circumcenter2d(p0.unsqueeze(0), p1.unsqueeze(0), p2.unsqueeze(0));
+    return center.squeeze(0);
+}
+
+
+// TODO: change circumradius implementation, so it does not produce nans and returns 0 instead.
+torch::Tensor
 circumradius2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 {
-    torch::Tensor ux, uy;
-    std::tie(ux, uy) = _cc_coordinates(p0, p1, p2);
-
+    auto [ux, uy] = _cc_coordinates(p0, p1, p2);
     return (ux.square() + uy.square()).sqrt();
 }
 
@@ -78,13 +79,12 @@ struct _SHull {
     std::vector<int64_t> next;
     std::vector<int64_t> prev;
 
-    double center_x;
-    double center_y;
+    const torch::Tensor m_center;
     int64_t start;
 
     const torch::Tensor& m_points;
 
-    _SHull(int64_t n, double x, double y, const torch::Tensor& points)
+    _SHull(int64_t n, const torch::Tensor& center, const torch::Tensor& points)
     : hash(),
       triangles(),
       halfedges(),
@@ -92,24 +92,21 @@ struct _SHull {
       hash_size(),
       next(n, -1),
       prev(n, -1),
-      center_x(),
-      center_y(),
+      m_center(center),
       start(0),
       m_points(points)
     {
         hash_size = static_cast<int64_t>(std::llround(std::ceil(std::sqrt(n))));
         hash.resize(hash_size);
         std::fill(hash.begin(), hash.end(), -1);
-
-        center_x = x;
-        center_y = y;
     }
 
     int64_t
     hash_key(const torch::Tensor& p) const
     {
-        const auto dx = p[0][0].item<float>() - center_x;
-        const auto dy = p[0][1].item<float>() - center_y;
+        const auto delta = p - m_center;
+        const auto dx = delta[0].item<double>();
+        const auto dy = delta[1].item<double>();
 
         // pseudo angle
         const auto rad = dx / (std::abs(dx) + std::abs(dy));
@@ -208,12 +205,10 @@ struct _SHull {
             auto al = a0 + (a + 1) % 3;
             auto bl = b0 + (b + 2) % 3;
 
-            auto p0 = m_points[triangles[ar]].unsqueeze(0);
-            auto pr = m_points[triangles[a]].unsqueeze(0);
-            auto pl = m_points[triangles[al]].unsqueeze(0);
-            auto p1 = m_points[triangles[bl]].unsqueeze(0);
+            auto triangle = torch::tensor({triangles[ar], triangles[a], triangles[al]});
+            auto p1 = m_points[triangles[bl]];
 
-            if (incircle2d(p0, pr, pl, p1).lt(0).all().item<bool>()) {
+            if (incircle2d(m_points.index({triangle}), p1)) {
                 triangles[a] = triangles[bl];
                 triangles[b] = triangles[ar];
 
@@ -247,6 +242,13 @@ struct _SHull {
 };
 
 
+inline bool
+ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
+{
+    return orient2d(p0, p1, p2).gt(0).all().item<bool>();
+}
+
+
 torch::Tensor
 shull2d(const torch::Tensor& points)
 {
@@ -272,8 +274,8 @@ shull2d(const torch::Tensor& points)
         index1 = indices[1];
     }
 
-    auto p0 = points[index0].unsqueeze(0);
-    auto p1 = points[index1].unsqueeze(0);
+    auto p0 = points.index({index0});
+    auto p1 = points.index({index1});
 
     // Find the third point such that forms the smallest circumcircle with i0 and i1.
     {
@@ -289,9 +291,9 @@ shull2d(const torch::Tensor& points)
         index2 = indices[0];
     }
 
-    auto p2 = points[index2].unsqueeze(0);
+    auto p2 = points.index({index2});
 
-    if (all_counterclockwise2d(p0, p1, p2)) {
+    if (ccw(p0, p1, p2)) {
         std::cout << "swapped" << std::endl;
         std::swap(index1, index2);
         std::swap(p1, p2);
@@ -300,17 +302,18 @@ shull2d(const torch::Tensor& points)
     std::cout << "seed triangle chosen" << std::endl;
 
     // Radially resort the points.
-    const auto center = circumcenter2d(p0, p1, p2);
-
+    const auto center = circumcenter(p0, p1, p2);
     const auto ordering = at::argsort(torch_delaunay::dist(points, center));
 
-    _SHull hull(n, center.index({0, 0}).item<float>(), center.index({0, 1}).item<float>(), points);
+    _SHull hull(n, center, points);
 
     std::cout << "hull created" << std::endl;
 
     auto i0 = index0.item<int64_t>();
     auto i1 = index1.item<int64_t>();
     auto i2 = index2.item<int64_t>();
+
+    std::cout << "indices initialized" << std::endl;
 
     hull.start = i0;
 
@@ -335,14 +338,13 @@ shull2d(const torch::Tensor& points)
 
     for (const auto k : c10::irange(n)) {
         auto i = ordering[k].item<int64_t>();
-        const auto pi = points[i].unsqueeze(0);
 
         // Skip points of the seed triangle, they are already part of the final hull.
         if (i == i0 || i == i1 || i == i2) {
             continue;
         }
 
-        int64_t is = hull.find_visible_edge(pi);
+        int64_t is = hull.find_visible_edge(points[i]);
 
         // TODO: Make sure what we found is on the hull?
 
@@ -351,18 +353,10 @@ shull2d(const torch::Tensor& points)
         int64_t iq = is;
 
         // Advance until we find a place in the hull were the current point can be added.
-        torch::Tensor pe, pn, pq;
-        while (true) {
+        do {
             ie = iq;
             iq = hull.next[ie];
-
-            pe = points[ie].unsqueeze(0);
-            pq = points[iq].unsqueeze(0);
-
-            if (all_counterclockwise2d(pi, pe, pq)) {
-                break;
-            }
-        }
+        } while (!ccw(points[i], points[ie], points[iq]));
 
         // TODO: Likely a near-duplicate?
         assert(ie != -1);
@@ -371,7 +365,6 @@ shull2d(const torch::Tensor& points)
         hull.tri[i] = last_tri;
         hull.tri[ie] = first_tri;
 
-
         // Traverse forward through the hull, adding more triangles and flipping
         // them recursively.
         auto in = hull.next[ie];
@@ -379,10 +372,7 @@ shull2d(const torch::Tensor& points)
         while (true) {
             iq = hull.next[in];
 
-            pn = points[in].unsqueeze(0);
-            pq = points[iq].unsqueeze(0);
-
-            if (!all_counterclockwise2d(pi, pn, pq)) {
+            if (!ccw(points[i], points[in], points[iq])) {
                 break;
             }
 
@@ -401,10 +391,7 @@ shull2d(const torch::Tensor& points)
             while (true) {
                 iq = hull.prev[ie];
 
-                pq = points[iq].unsqueeze(0);
-                pe = points[ie].unsqueeze(0);
-
-                if (!all_counterclockwise2d(pi, pq, pe)) {
+                if (!ccw(points[i], points[iq], points[ie])) {
                     break;
                 }
 
@@ -422,8 +409,8 @@ shull2d(const torch::Tensor& points)
         hull.next[ie] = i;
         hull.next[i] = in;
 
-        hull.set(hull.hash_key(points[i].unsqueeze(0)), i);
-        hull.set(hull.hash_key(points[ie].unsqueeze(0)), ie);
+        hull.set(hull.hash_key(points[i]), i);
+        hull.set(hull.hash_key(points[ie]), ie);
     }
 
     int64_t tn = hull.triangles.size() / 3;

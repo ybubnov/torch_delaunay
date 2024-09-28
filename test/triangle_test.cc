@@ -1,5 +1,5 @@
 #define BOOST_TEST_DYN_LINK
-#define BOOST_TEST_MODULE quadtree
+#define BOOST_TEST_MODULE torch_delaunay
 
 #include <boost/test/included/unit_test.hpp>
 
@@ -18,7 +18,6 @@ BOOST_AUTO_TEST_CASE(test_shull2d)
     auto points = torch::tensor({{0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}}, options);
 
     auto simplices = shull2d(points);
-    std::cout << "SIMPLICES: " << simplices << std::endl;
 
     BOOST_CHECK_EQUAL(simplices.sizes(), torch::IntArrayRef({1, 3}));
 }

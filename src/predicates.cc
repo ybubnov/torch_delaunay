@@ -32,7 +32,6 @@ incircle2d(
     const torch::Tensor& q
 )
 {
-
     const auto d0 = p0 - q;
     const auto d1 = p1 - q;
     const auto d2 = p2 - q;
@@ -44,18 +43,14 @@ incircle2d(
     return torch::linalg::det(A).sign();
 }
 
-
 bool
-all_counterclockwise2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
+incircle2d(const torch::Tensor& points, const torch::Tensor& q)
 {
-    return orient2d(p0, p1, p2).gt(0).all().item<bool>();
-}
+    const auto d = points - q;
+    const auto abc = d.square().sum(-1).view({-1, 1});
+    const auto A = torch::hstack({d, abc});
 
-
-bool
-all_clockwise2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
-{
-    return orient2d(p0, p1, p2).lt(0).all().item<bool>();
+    return torch::linalg::det(A).sign().lt(0).all().item<bool>();
 }
 
 
