@@ -1,4 +1,5 @@
 #include <stack>
+#include <unordered_map>
 
 #include <torch_delaunay/predicates.h>
 #include <torch_delaunay/triangle.h>
@@ -55,6 +56,10 @@ circumcenter(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tens
 torch::Tensor
 circumradius2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 {
+    TORCH_CHECK(p0.dim() == 2, "circumcenter2d only supports 2D tensors, got: ", p0.dim(), "D");
+    TORCH_CHECK(p1.dim() == 2, "circumcenter2d only supports 2D tensors, got: ", p1.dim(), "D");
+    TORCH_CHECK(p2.dim() == 2, "circumcenter2d only supports 2D tensors, got: ", p2.dim(), "D");
+
     auto [ux, uy] = _cc_coordinates(p0, p1, p2);
     return (ux.square() + uy.square()).sqrt();
 }
@@ -72,7 +77,7 @@ dist(const torch::Tensor& p, const torch::Tensor& q)
 struct _SHull {
     std::vector<int64_t> hash;
     std::vector<int64_t> triangles;
-    std::vector<int64_t> halfedges;
+    std::unordered_map<int64_t, int64_t> halfedges;
     std::vector<int64_t> tri;
     std::int64_t hash_size;
 
@@ -160,26 +165,11 @@ struct _SHull {
     void
     link(int64_t a, int64_t b)
     {
-        auto num_halfedges = halfedges.size();
-        if (a == num_halfedges) {
-            halfedges.push_back(b);
-        } else if (a < num_halfedges) {
+        if (a != -1) {
             halfedges[a] = b;
-        } else {
-            throw std::runtime_error("cannot link the edge");
         }
-
-        if (b == -1) {
-            return;
-        }
-
-        num_halfedges = halfedges.size();
-        if (b == num_halfedges) {
-            halfedges.push_back(a);
-        } else if (b < num_halfedges) {
+        if (b != -1) {
             halfedges[b] = a;
-        } else {
-            throw std::runtime_error("cannot link the edge");
         }
     }
 
