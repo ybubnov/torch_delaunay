@@ -153,9 +153,9 @@ struct _SHull {
         triangles.push_back(i0);
         triangles.push_back(i1);
         triangles.push_back(i2);
-        link(t, a);
-        link(t + 1, b);
-        link(t + 2, c);
+        push_edge(t, a);
+        push_edge(t + 1, b);
+        push_edge(t + 2, c);
 
         // TODO: what does `x` mean?
         auto x = flip(t + 2);
@@ -163,7 +163,7 @@ struct _SHull {
     }
 
     void
-    link(int64_t a, int64_t b)
+    push_edge(int64_t a, int64_t b)
     {
         if (a != -1) {
             halfedges[a] = b;
@@ -173,27 +173,34 @@ struct _SHull {
         }
     }
 
-    std::size_t
-    flip(int64_t a)
+    inline std::tuple<int64_t, int64_t, int64_t>
+    tri_edges(int64_t edge) const
     {
-        int64_t ar = 0;
-        std::stack<int64_t> edge_stack({a});
+        int64_t edge0 = 3 * (edge / 3);
+        int64_t edge1 = edge0 + (edge + 1) % 3;
+        int64_t edge2 = edge0 + (edge + 2) % 3;
+        return std::forward_as_tuple(edge0, edge1, edge2);
+    }
 
-        while (edge_stack.size() > 0) {
-            int64_t a = edge_stack.top();
-            edge_stack.pop();
+    std::size_t
+    flip(int64_t edge)
+    {
+        int64_t a0 = 0, ar = 0, al = 0;
+        int64_t b0 = 0, br = 0, bl = 0;
 
-            auto a0 = 3 * (a / 3);
-            ar = a0 + (a + 2) % 3;
+        std::stack<int64_t> unvisited_edges({edge});
 
+        while (unvisited_edges.size() > 0) {
+            int64_t a = unvisited_edges.top();
+            unvisited_edges.pop();
+
+            std::tie(a0, al, ar) = tri_edges(a);
             auto b = halfedges[a];
             if (b == -1) {
                 continue;
             }
 
-            auto b0 = 3 * (b / 3);
-            auto al = a0 + (a + 1) % 3;
-            auto bl = b0 + (b + 2) % 3;
+            std::tie(b0, br, bl) = tri_edges(b);
 
             auto triangle = torch::tensor({triangles[ar], triangles[a], triangles[al]});
             auto p1 = m_points[triangles[bl]];
@@ -216,14 +223,12 @@ struct _SHull {
                     } while (ie != start);
                 }
 
-                link(a, h_bl);
-                link(b, halfedges[ar]);
-                link(ar, bl);
+                push_edge(a, h_bl);
+                push_edge(b, halfedges[ar]);
+                push_edge(ar, bl);
 
-                auto br = b0 + (b + 1) % 3;
-
-                edge_stack.push(br);
-                edge_stack.push(a);
+                unvisited_edges.push(br);
+                unvisited_edges.push(a);
             }
         }
 
