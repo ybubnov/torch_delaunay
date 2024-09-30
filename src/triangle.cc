@@ -75,6 +75,19 @@ dist(const torch::Tensor& p, const torch::Tensor& q)
 }
 
 
+inline bool
+ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
+{
+    return orient2d(p0, p1, p2).gt(0).all().item<bool>();
+}
+
+inline bool
+ccw(const std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>& points)
+{
+    return ccw(std::get<0>(points), std::get<1>(points), std::get<2>(points));
+}
+
+
 struct _SHull {
     std::vector<int64_t> hash;
     std::vector<int64_t> triangles;
@@ -122,6 +135,15 @@ struct _SHull {
         return static_cast<std::int64_t>(k) % hash_size;
     }
 
+    void
+    insert_visible_edge(int64_t i, int64_t j)
+    {
+        next[i] = j;
+        prev[j] = i;
+
+        hash[hash_key(m_points[i])] = i;
+    }
+
     int64_t
     find_visible_edge(const torch::Tensor& point) const
     {
@@ -140,12 +162,6 @@ struct _SHull {
         return edge_index;
     }
 
-    void
-    set(int64_t key, int64_t val)
-    {
-        hash[key] = val;
-    }
-
     std::tuple<int64_t, int64_t>
     push_tri(int64_t i0, int64_t i1, int64_t i2, int64_t a, int64_t b, int64_t c)
     {
@@ -161,6 +177,12 @@ struct _SHull {
         // TODO: what does `x` mean?
         auto x = flip(edge + 2);
         return std::forward_as_tuple(edge, x);
+    }
+
+    const std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+    get_tri(int64_t i0, int64_t i1, int64_t i2) const
+    {
+        return std::forward_as_tuple(m_points[i0], m_points[i1], m_points[i2]);
     }
 
     void
@@ -239,13 +261,6 @@ struct _SHull {
 };
 
 
-inline bool
-ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
-{
-    return orient2d(p0, p1, p2).gt(0).all().item<bool>();
-}
-
-
 std::tuple<torch::Tensor, torch::Tensor>
 shull_seed2d(const torch::Tensor& points)
 {
@@ -319,19 +334,10 @@ shull2d(const torch::Tensor& points)
 
     std::cout << "indices initialized" << std::endl;
 
+    hull.insert_visible_edge(i0, i1);
+    hull.insert_visible_edge(i1, i2);
+    hull.insert_visible_edge(i2, i0);
     hull.start = i0;
-
-    hull.set(hull.hash_key(points[i0]), i0);
-    hull.set(hull.hash_key(points[i1]), i1);
-    hull.set(hull.hash_key(points[i2]), i2);
-
-    hull.next[i0] = i1;
-    hull.next[i1] = i2;
-    hull.next[i2] = i0;
-
-    hull.prev[i0] = i2;
-    hull.prev[i1] = i0;
-    hull.prev[i2] = i1;
 
     hull.tri[i0] = 0;
     hull.tri[i1] = 1;
@@ -352,11 +358,10 @@ shull2d(const torch::Tensor& points)
         auto is = hull.find_visible_edge(points[i]);
 
         // TODO: Make sure what we found is on the hull?
-
         auto ie = hull.prev[is];
 
         // Advance until we find a place in the hull were the current point can be added.
-        while (!ccw(points[i], points[ie], points[hull.next[ie]])) {
+        while (!ccw(hull.get_tri(i, ie, hull.next[ie]))) {
             // TODO: could it be an infinite loop?
             ie = hull.next[ie];
         }
@@ -396,13 +401,9 @@ shull2d(const torch::Tensor& points)
         }
 
         hull.start = ie;
-        hull.prev[i] = ie;
-        hull.next[ie] = i;
-        hull.next[i] = in;
-        hull.prev[in] = i;
 
-        hull.set(hull.hash_key(points[i]), i);
-        hull.set(hull.hash_key(points[ie]), ie);
+        hull.insert_visible_edge(i, in);
+        hull.insert_visible_edge(ie, i);
     }
 
     std::cout << "triangles computed" << std::endl;
