@@ -360,38 +360,29 @@ shull2d(const torch::Tensor& points)
         // Traverse forward through the hull, adding more triangles and flipping
         // them recursively.
         auto in = hull.next[ie];
+        iq = hull.next[in];
 
-        while (true) {
-            iq = hull.next[in];
-
-            if (!ccw(points[i], points[in], points[iq])) {
-                break;
-            }
-
+        while (ccw(points[i], points[in], points[iq])) {
             auto [_, last_tri] = hull.push_tri(in, i, iq, hull.tri[i], -1, hull.tri[in]);
             hull.tri[i] = last_tri;
 
-            hull.next[in] = in;
+            hull.next[in] = in; // Mark as removed (what does it mean?)
             in = iq;
+            iq = hull.next[iq];
         }
 
         // Traverse backward through the hull, adding more triangles and flipping
         // them recursively.
         if (ie == is) {
-            iq = is;
+            iq = hull.prev[ie];
 
-            while (true) {
-                iq = hull.prev[ie];
-
-                if (!ccw(points[i], points[iq], points[ie])) {
-                    break;
-                }
-
+            while (ccw(points[i], points[iq], points[ie])) {
                 auto [first_tri, _] = hull.push_tri(iq, i, ie, -1, hull.tri[ie], hull.tri[iq]);
                 hull.tri[iq] = first_tri;
 
-                hull.next[ie] = ie;
+                hull.next[ie] = ie; // Mark as removed (what does it mean?)
                 ie = iq;
+                iq = hull.prev[iq];
             }
         }
 
@@ -408,8 +399,9 @@ shull2d(const torch::Tensor& points)
     std::cout << "triangles computed" << std::endl;
 
     int64_t tn = hull.triangles.size() / 3;
-    auto answer
-        = torch::tensor(std::move(hull.triangles), torch::TensorOptions().dtype(torch::kInt64));
+    auto options = points.options().dtype(torch::kInt64);
+    auto answer = torch::tensor(std::move(hull.triangles), options);
+
     std::cout << "triangles move to tensor" << std::endl;
     return answer.view({tn, 3});
 }
