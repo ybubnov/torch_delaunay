@@ -195,15 +195,15 @@ struct _SHull {
 
         while (unvisited_edges.size() > 0) {
             auto a = unvisited_edges.top();
-            unvisited_edges.pop();
-
             auto b = halfedges[a];
-            if (b == -1) {
-                continue;
-            }
 
             std::tie(a, al, ar) = tri_edges(a);
             std::tie(b, br, bl) = tri_edges(b);
+
+            unvisited_edges.pop();
+            if (b == -1) {
+                continue;
+            }
 
             auto triangle = torch::tensor({triangles[ar], triangles[a], triangles[al]});
             auto p1 = m_points[triangles[bl]];
@@ -329,6 +329,7 @@ shull2d(const torch::Tensor& points)
 
     for (const auto k : c10::irange(n)) {
         auto i = ordering[k].item<int64_t>();
+        std::cout << "processing [" << k << "]" << std::endl;
 
         // Skip points of the seed triangle, they are already part of the final hull.
         if (i == i0 || i == i1 || i == i2) {
@@ -404,9 +405,13 @@ shull2d(const torch::Tensor& points)
         hull.set(hull.hash_key(points[ie]), ie);
     }
 
+    std::cout << "triangles computed" << std::endl;
+
     int64_t tn = hull.triangles.size() / 3;
-    auto answer = torch::tensor(hull.triangles, torch::TensorOptions().dtype(torch::kInt64));
-    return answer.reshape({tn, 3});
+    auto answer
+        = torch::tensor(std::move(hull.triangles), torch::TensorOptions().dtype(torch::kInt64));
+    std::cout << "triangles move to tensor" << std::endl;
+    return answer.view({tn, 3});
 }
 
 
