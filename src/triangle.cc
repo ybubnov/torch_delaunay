@@ -45,9 +45,10 @@ circumcenter2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Te
 
 
 torch::Tensor
-circumcenter(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
+circumcenter2d(const torch::Tensor& points)
 {
-    auto center = circumcenter2d(p0.unsqueeze(0), p1.unsqueeze(0), p2.unsqueeze(0));
+    auto center
+        = circumcenter2d(points[0].unsqueeze(0), points[1].unsqueeze(0), points[2].unsqueeze(0));
     return center.squeeze(0);
 }
 
@@ -245,11 +246,9 @@ ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 }
 
 
-torch::Tensor
-shull2d(const torch::Tensor& points)
+std::tuple<torch::Tensor, torch::Tensor>
+shull_seed2d(const torch::Tensor& points)
 {
-    TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got: ", points.dim(), "D");
-
     // Indices of the seed triangle.
     torch::Tensor index0, index1, index2;
     const auto n = points.size(0);
@@ -285,32 +284,46 @@ shull2d(const torch::Tensor& points)
     auto p2 = points.index({index2});
 
     if (ccw(p0, p1, p2)) {
-        std::cout << "swapped" << std::endl;
         std::swap(index1, index2);
         std::swap(p1, p2);
     }
 
-    std::cout << "seed triangle chosen" << std::endl;
+    auto points_out = at::vstack({p0, p1, p2});
+    auto indices_out = at::vstack({index0, index1, index2});
+
+    return std::forward_as_tuple(points_out, indices_out);
+}
+
+
+torch::Tensor
+shull2d(const torch::Tensor& points)
+{
+    TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got: ", points.dim(), "D");
+
+    // Find the seed triangle (comprised of vertices located approximately
+    // at the center of the point cloud).
+    const auto [triangle, indices] = shull_seed2d(points);
 
     // Radially resort the points.
-    const auto center = circumcenter(p0, p1, p2);
+    const auto center = circumcenter2d(triangle);
     const auto ordering = at::argsort(torch_delaunay::dist(points, center));
 
+    const auto n = points.size(0);
     _SHull hull(n, center, points);
 
     std::cout << "hull created" << std::endl;
 
-    auto i0 = index0.item<int64_t>();
-    auto i1 = index1.item<int64_t>();
-    auto i2 = index2.item<int64_t>();
+    auto i0 = indices[0].item<int64_t>();
+    auto i1 = indices[1].item<int64_t>();
+    auto i2 = indices[2].item<int64_t>();
 
     std::cout << "indices initialized" << std::endl;
 
     hull.start = i0;
 
-    hull.set(hull.hash_key(p0), i0);
-    hull.set(hull.hash_key(p1), i1);
-    hull.set(hull.hash_key(p2), i2);
+    hull.set(hull.hash_key(triangle[0]), i0);
+    hull.set(hull.hash_key(triangle[1]), i1);
+    hull.set(hull.hash_key(triangle[2]), i2);
 
     hull.next[i0] = i1;
     hull.next[i1] = i2;
@@ -400,10 +413,10 @@ shull2d(const torch::Tensor& points)
 
     int64_t tn = hull.triangles.size() / 3;
     auto options = points.options().dtype(torch::kInt64);
-    auto answer = torch::tensor(std::move(hull.triangles), options);
+    auto triangles = torch::tensor(std::move(hull.triangles), options);
 
     std::cout << "triangles move to tensor" << std::endl;
-    return answer.view({tn, 3});
+    return triangles.view({tn, 3});
 }
 
 
