@@ -9,6 +9,7 @@ from torch_delaunay.functional import shull2d, circumcenter2d, circumradius2d
 def test_shull2d() -> None:
     points = torch.randn((1000, 2), dtype=torch.float64)
     simplices = shull2d(points)
+    print("shull2d completed")
 
     assert (simplices >= 1000).sum() == 0, "simplices are outside of points array limit"
 
