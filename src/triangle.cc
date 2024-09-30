@@ -148,18 +148,18 @@ struct _SHull {
     std::tuple<int64_t, int64_t>
     push_tri(int64_t i0, int64_t i1, int64_t i2, int64_t a, int64_t b, int64_t c)
     {
-        auto t = triangles.size();
+        auto edge = triangles.size();
 
         triangles.push_back(i0);
         triangles.push_back(i1);
         triangles.push_back(i2);
-        push_edge(t, a);
-        push_edge(t + 1, b);
-        push_edge(t + 2, c);
+        push_edge(edge, a);
+        push_edge(edge + 1, b);
+        push_edge(edge + 2, c);
 
         // TODO: what does `x` mean?
-        auto x = flip(t + 2);
-        return std::make_tuple(t, x);
+        auto x = flip(edge + 2);
+        return std::forward_as_tuple(edge, x);
     }
 
     void
@@ -179,28 +179,31 @@ struct _SHull {
         int64_t edge0 = 3 * (edge / 3);
         int64_t edge1 = edge0 + (edge + 1) % 3;
         int64_t edge2 = edge0 + (edge + 2) % 3;
-        return std::forward_as_tuple(edge0, edge1, edge2);
+        return std::forward_as_tuple(edge, edge1, edge2);
     }
 
+    /// Flip triangle edges recursively until they all comply to Delaunay condition.
+    ///
+    /// \return The next edge of the triangle (in ccw direction).
     std::size_t
     flip(int64_t edge)
     {
-        int64_t a0 = 0, ar = 0, al = 0;
-        int64_t b0 = 0, br = 0, bl = 0;
+        int64_t ar = -1, al = -1;
+        int64_t br = -1, bl = -1;
 
         std::stack<int64_t> unvisited_edges({edge});
 
         while (unvisited_edges.size() > 0) {
-            int64_t a = unvisited_edges.top();
+            auto a = unvisited_edges.top();
             unvisited_edges.pop();
 
-            std::tie(a0, al, ar) = tri_edges(a);
             auto b = halfedges[a];
             if (b == -1) {
                 continue;
             }
 
-            std::tie(b0, br, bl) = tri_edges(b);
+            std::tie(a, al, ar) = tri_edges(a);
+            std::tie(b, br, bl) = tri_edges(b);
 
             auto triangle = torch::tensor({triangles[ar], triangles[a], triangles[al]});
             auto p1 = m_points[triangles[bl]];
@@ -209,9 +212,7 @@ struct _SHull {
                 triangles[a] = triangles[bl];
                 triangles[b] = triangles[ar];
 
-                auto h_bl = halfedges[bl];
-
-                if (h_bl == -1) {
+                if (halfedges[bl] == -1) {
                     auto ie = start;
                     do {
                         if (tri[ie] == bl) {
@@ -223,7 +224,7 @@ struct _SHull {
                     } while (ie != start);
                 }
 
-                push_edge(a, h_bl);
+                push_edge(a, halfedges[bl]);
                 push_edge(b, halfedges[ar]);
                 push_edge(ar, bl);
 
@@ -252,16 +253,13 @@ shull2d(const torch::Tensor& points)
     // Indices of the seed triangle.
     torch::Tensor index0, index1, index2;
     const auto n = points.size(0);
-    std::cout << "points: " << points << std::endl;
 
     // Choose seed points close to a centroid of the point cloud.
     {
         auto [min, max] = points.aminmax(0);
 
         const auto centroid = (max + min) / 2;
-        std::cout << "centroid: " << centroid << std::endl;
         const auto dists = torch_delaunay::dist(points, centroid);
-        std::cout << "dists: " << dists << std::endl;
 
         auto [values, indices] = at::topk(dists, 2, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
 
@@ -278,8 +276,6 @@ shull2d(const torch::Tensor& points)
         const auto radii = circumradius2d(p0.repeat({n, 1}), p1.repeat({n, 1}), points);
 
         auto [values, indices] = at::topk(radii, 3, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
-        std::cout << "radii: " << radii << std::endl;
-        std::cout << "circumradius/indices: " << indices << std::endl;
 
         // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
         // at 0 index will be a point with the minimum radius.
