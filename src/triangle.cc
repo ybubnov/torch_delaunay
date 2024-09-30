@@ -321,9 +321,9 @@ shull2d(const torch::Tensor& points)
 
     hull.start = i0;
 
-    hull.set(hull.hash_key(triangle[0]), i0);
-    hull.set(hull.hash_key(triangle[1]), i1);
-    hull.set(hull.hash_key(triangle[2]), i2);
+    hull.set(hull.hash_key(points[i0]), i0);
+    hull.set(hull.hash_key(points[i1]), i1);
+    hull.set(hull.hash_key(points[i2]), i2);
 
     hull.next[i0] = i1;
     hull.next[i1] = i2;
@@ -349,19 +349,17 @@ shull2d(const torch::Tensor& points)
             continue;
         }
 
-        int64_t is = hull.find_visible_edge(points[i]);
+        auto is = hull.find_visible_edge(points[i]);
 
         // TODO: Make sure what we found is on the hull?
 
-        is = hull.prev[is];
-        int64_t ie = is;
-        int64_t iq = is;
+        auto ie = hull.prev[is];
 
         // Advance until we find a place in the hull were the current point can be added.
-        do {
-            ie = iq;
-            iq = hull.next[ie];
-        } while (!ccw(points[i], points[ie], points[iq]));
+        while (!ccw(points[i], points[ie], points[hull.next[ie]])) {
+            // TODO: could it be an infinite loop?
+            ie = hull.next[ie];
+        }
 
         // TODO: Likely a near-duplicate?
         assert(ie != -1);
@@ -373,37 +371,35 @@ shull2d(const torch::Tensor& points)
         // Traverse forward through the hull, adding more triangles and flipping
         // them recursively.
         auto in = hull.next[ie];
-        iq = hull.next[in];
 
-        while (ccw(points[i], points[in], points[iq])) {
-            auto [_, last_tri] = hull.push_tri(in, i, iq, hull.tri[i], -1, hull.tri[in]);
+        while (ccw(points[i], points[in], points[hull.next[in]])) {
+            auto [_, last_tri] = hull.push_tri(in, i, hull.next[in], hull.tri[i], -1, hull.tri[in]);
             hull.tri[i] = last_tri;
 
-            hull.next[in] = in; // Mark as removed (what does it mean?)
-            in = iq;
-            iq = hull.next[iq];
+            std::swap(in, hull.next[in]);
         }
 
         // Traverse backward through the hull, adding more triangles and flipping
         // them recursively.
+        is = hull.prev[is];
+
         if (ie == is) {
-            iq = hull.prev[ie];
+            while (ccw(points[i], points[hull.prev[ie]], points[ie])) {
+                auto [first_tri, _] = hull.push_tri(
+                    hull.prev[ie], i, ie, -1, hull.tri[ie], hull.tri[hull.prev[ie]]
+                );
+                hull.tri[hull.prev[ie]] = first_tri;
 
-            while (ccw(points[i], points[iq], points[ie])) {
-                auto [first_tri, _] = hull.push_tri(iq, i, ie, -1, hull.tri[ie], hull.tri[iq]);
-                hull.tri[iq] = first_tri;
-
-                hull.next[ie] = ie; // Mark as removed (what does it mean?)
-                ie = iq;
-                iq = hull.prev[iq];
+                hull.next[ie] = ie;
+                std::swap(ie, hull.prev[ie]);
             }
         }
 
         hull.start = ie;
         hull.prev[i] = ie;
-        hull.prev[in] = i;
         hull.next[ie] = i;
         hull.next[i] = in;
+        hull.prev[in] = i;
 
         hull.set(hull.hash_key(points[i]), i);
         hull.set(hull.hash_key(points[ie]), ie);
