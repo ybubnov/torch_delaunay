@@ -145,9 +145,9 @@ struct _SHull {
     }
 
     int64_t
-    find_visible_edge(const torch::Tensor& point) const
+    find_visible_edge(int64_t i) const
     {
-        const auto key = hash_key(point);
+        const auto key = hash_key(m_points[i]);
         int64_t edge_index = 0;
 
         for (int64_t j = 0; j < hash_size; j++) {
@@ -355,19 +355,23 @@ shull2d(const torch::Tensor& points)
             continue;
         }
 
-        auto is = hull.find_visible_edge(points[i]);
+        auto is = hull.find_visible_edge(i);
 
         // TODO: Make sure what we found is on the hull?
         auto ie = hull.prev[is];
 
         // Advance until we find a place in the hull were the current point can be added.
-        while (!ccw(hull.get_tri(i, ie, hull.next[ie]))) {
+        while (!ccw(hull.get_tri(i, ie, hull.next[ie])) && ie != -1) {
             // TODO: could it be an infinite loop?
             ie = hull.next[ie];
+            std::cout << "\tfind place" << std::endl;
         }
 
         // TODO: Likely a near-duplicate?
-        assert(ie != -1);
+        if (ie == -1) {
+            std::cout << "continue" << std::endl;
+            continue;
+        }
 
         auto [first_tri, last_tri] = hull.push_tri(ie, i, hull.next[ie], -1, -1, hull.tri[ie]);
         hull.tri[i] = last_tri;
@@ -377,11 +381,12 @@ shull2d(const torch::Tensor& points)
         // them recursively.
         auto in = hull.next[ie];
 
-        while (ccw(points[i], points[in], points[hull.next[in]])) {
+        while (ccw(hull.get_tri(i, in, hull.next[in]))) {
             auto [_, last_tri] = hull.push_tri(in, i, hull.next[in], hull.tri[i], -1, hull.tri[in]);
             hull.tri[i] = last_tri;
 
             std::swap(in, hull.next[in]);
+            std::cout << "\tforward" << std::endl;
         }
 
         // Traverse backward through the hull, adding more triangles and flipping
@@ -389,7 +394,7 @@ shull2d(const torch::Tensor& points)
         is = hull.prev[is];
 
         if (ie == is) {
-            while (ccw(points[i], points[hull.prev[ie]], points[ie])) {
+            while (ccw(hull.get_tri(i, hull.prev[ie], ie))) {
                 auto [first_tri, _] = hull.push_tri(
                     hull.prev[ie], i, ie, -1, hull.tri[ie], hull.tri[hull.prev[ie]]
                 );
@@ -397,6 +402,7 @@ shull2d(const torch::Tensor& points)
 
                 hull.next[ie] = ie;
                 std::swap(ie, hull.prev[ie]);
+                std::cout << "\tbackward" << std::endl;
             }
         }
 
