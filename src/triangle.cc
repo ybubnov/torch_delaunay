@@ -364,7 +364,7 @@ shull2d(const torch::Tensor& points)
         auto ie = hull.prev[is];
 
         // Advance until we find a place in the hull were the current point can be added.
-        while (!ccw(hull.get_tri(i, ie, hull.next[ie])) && ie != -1) {
+        while (ccw(hull.get_tri(ie, i, hull.next[ie])) && ie != -1) {
             // TODO: could it be an infinite loop?
             ie = hull.next[ie];
             std::cout << "\tfind place" << std::endl;
@@ -385,7 +385,7 @@ shull2d(const torch::Tensor& points)
         // them recursively.
         auto in = hull.next[ie];
 
-        while (ccw(hull.get_tri(i, in, hull.next[in]))) {
+        while (!ccw(hull.get_tri(in, i, hull.next[in]))) {
             edge0 = hull.push_tri(in, i, hull.next[in]);
             edge1 = hull.push_edges(hull.tri[i], -1, hull.tri[in]);
             hull.tri[i] = edge1;
@@ -399,7 +399,7 @@ shull2d(const torch::Tensor& points)
         is = hull.prev[is];
 
         if (ie == is) {
-            while (ccw(hull.get_tri(i, hull.prev[ie], ie))) {
+            while (!ccw(hull.get_tri(hull.prev[ie], i, ie))) {
                 edge0 = hull.push_tri(hull.prev[ie], i, ie);
                 edge1 = hull.push_edges(-1, hull.tri[ie], hull.tri[hull.prev[ie]]);
 
