@@ -1,7 +1,8 @@
 #include <stack>
 #include <unordered_map>
 
-#include <torch_delaunay/predicates.h>
+#include <torch_delaunay/predicate.h>
+#include <torch_delaunay/sweephull.h>
 #include <torch_delaunay/triangle.h>
 
 #include <ATen/native/cpu/Loops.h>

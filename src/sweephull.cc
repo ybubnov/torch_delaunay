@@ -65,7 +65,7 @@ struct shull {
       m_points(points),
       start(0)
     {
-        hash_size = static_cast<int64_t>(std::llround(std::ceil(std::sqrt(n))));
+        auto hash_size = static_cast<int64_t>(std::llround(std::ceil(std::sqrt(n))));
         hash.resize(hash_size);
         std::fill(hash.begin(), hash.end(), -1);
     }
@@ -102,8 +102,8 @@ struct shull {
         const auto key = hash_key(m_points[i]);
         int64_t edge_index = 0;
 
-        for (int64_t j = 0; j < hash_size; j++) {
-            edge_index = hash[(key + j) % hash_size];
+        for (int64_t j = 0; j < hash.size(); j++) {
+            edge_index = hash[(key + j) % hash.size()];
 
             if (edge_index != -1 && edge_index != next[edge_index]) {
                 break;
