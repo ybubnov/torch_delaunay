@@ -9,7 +9,7 @@
 using namespace torch_delaunay;
 
 
-BOOST_AUTO_TEST_SUITE(TestPredicates)
+BOOST_AUTO_TEST_SUITE(TestPredicate)
 
 
 BOOST_AUTO_TEST_CASE(test_incircle2d)

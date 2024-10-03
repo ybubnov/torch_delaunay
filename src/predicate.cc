@@ -1,4 +1,4 @@
-#include <torch_delaunay/predicates.h>
+#include <torch_delaunay/predicate.h>
 
 #include <torch/linalg.h>
 

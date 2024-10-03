@@ -7,8 +7,9 @@ setup(
         CppExtension(
             name="torch_delaunay._C",
             sources=[
+                "src/sweephull.cc",
+                "src/predicate.cc",
                 "src/triangle.cc",
-                "src/predicates.cc",
                 "torch_delaunay/__bind__/python_module.cc",
             ],
             include_dirs=[
