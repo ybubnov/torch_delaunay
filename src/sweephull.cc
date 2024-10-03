@@ -288,7 +288,6 @@ shull_seed2d(const torch::Tensor& points)
     // Indices of the seed triangle.
     torch::Tensor index0, index1, index2;
     torch::Tensor values, indices;
-    const auto n = points.size(0);
 
     // Choose seed points close to a centroid of the point cloud.
     auto [min, max] = points.aminmax(0);
@@ -303,14 +302,12 @@ shull_seed2d(const torch::Tensor& points)
     auto p1 = points.index({index1});
 
     // Find the third point such that forms the smallest circumcircle with i0 and i1.
-    // TODO: repeat increases the space, consider using broadcast operations.
-    const auto radii = circumradius2d(p0.repeat({n, 1}), p1.repeat({n, 1}), points);
+    const auto radii = circumradius2d(p0.view({-1, 2}), p1.view({-1, 2}), points);
 
     std::tie(values, indices) = at::topk(radii, 3, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
     // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
     // at 0 index will be a point with the minimum radius.
     index2 = indices[0];
-
     auto p2 = points.index({index2});
 
     if (ccw(p0, p1, p2)) {
