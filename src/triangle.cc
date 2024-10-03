@@ -162,27 +162,31 @@ struct _SHull {
         return edge_index;
     }
 
-    std::tuple<int64_t, int64_t>
-    push_tri(int64_t i0, int64_t i1, int64_t i2, int64_t a, int64_t b, int64_t c)
+    int64_t
+    push_tri(int64_t i0, int64_t i1, int64_t i2)
     {
-        auto edge = triangles.size();
-
+        int64_t edge = triangles.size();
         triangles.push_back(i0);
         triangles.push_back(i1);
         triangles.push_back(i2);
-        push_edge(edge, a);
-        push_edge(edge + 1, b);
-        push_edge(edge + 2, c);
-
-        // TODO: what does `x` mean?
-        auto x = flip(edge + 2);
-        return std::forward_as_tuple(edge, x);
+        return edge;
     }
 
     const std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
     get_tri(int64_t i0, int64_t i1, int64_t i2) const
     {
         return std::forward_as_tuple(m_points[i0], m_points[i1], m_points[i2]);
+    }
+
+    int64_t
+    push_edges(int64_t a, int64_t b, int64_t c)
+    {
+        int64_t edge = triangles.size() - 3;
+        push_edge(edge, a);
+        push_edge(edge + 1, b);
+        push_edge(edge + 2, c);
+
+        return flip(edge + 2);
     }
 
     void
@@ -332,8 +336,6 @@ shull2d(const torch::Tensor& points)
     auto i1 = indices[1].item<int64_t>();
     auto i2 = indices[2].item<int64_t>();
 
-    std::cout << "indices initialized" << std::endl;
-
     hull.insert_visible_edge(i0, i1);
     hull.insert_visible_edge(i1, i2);
     hull.insert_visible_edge(i2, i0);
@@ -344,7 +346,8 @@ shull2d(const torch::Tensor& points)
     hull.tri[i2] = 2;
 
     std::cout << "seed: " << i0 << "," << i1 << "," << i2 << std::endl;
-    hull.push_tri(i0, i1, i2, -1, -1, -1);
+    hull.push_tri(i0, i1, i2);
+    hull.push_edges(-1, -1, -1);
 
     for (const auto k : c10::irange(n)) {
         auto i = ordering[k].item<int64_t>();
@@ -373,17 +376,19 @@ shull2d(const torch::Tensor& points)
             continue;
         }
 
-        auto [first_tri, last_tri] = hull.push_tri(ie, i, hull.next[ie], -1, -1, hull.tri[ie]);
-        hull.tri[i] = last_tri;
-        hull.tri[ie] = first_tri;
+        auto edge0 = hull.push_tri(ie, i, hull.next[ie]);
+        auto edge1 = hull.push_edges(-1, -1, hull.tri[ie]);
+        hull.tri[ie] = edge0;
+        hull.tri[i] = edge1;
 
         // Traverse forward through the hull, adding more triangles and flipping
         // them recursively.
         auto in = hull.next[ie];
 
         while (ccw(hull.get_tri(i, in, hull.next[in]))) {
-            auto [_, last_tri] = hull.push_tri(in, i, hull.next[in], hull.tri[i], -1, hull.tri[in]);
-            hull.tri[i] = last_tri;
+            edge0 = hull.push_tri(in, i, hull.next[in]);
+            edge1 = hull.push_edges(hull.tri[i], -1, hull.tri[in]);
+            hull.tri[i] = edge1;
 
             std::swap(in, hull.next[in]);
             std::cout << "\tforward" << std::endl;
@@ -395,10 +400,10 @@ shull2d(const torch::Tensor& points)
 
         if (ie == is) {
             while (ccw(hull.get_tri(i, hull.prev[ie], ie))) {
-                auto [first_tri, _] = hull.push_tri(
-                    hull.prev[ie], i, ie, -1, hull.tri[ie], hull.tri[hull.prev[ie]]
-                );
-                hull.tri[hull.prev[ie]] = first_tri;
+                edge0 = hull.push_tri(hull.prev[ie], i, ie);
+                edge1 = hull.push_edges(-1, hull.tri[ie], hull.tri[hull.prev[ie]]);
+
+                hull.tri[hull.prev[ie]] = edge0;
 
                 hull.next[ie] = ie;
                 std::swap(ie, hull.prev[ie]);
@@ -418,7 +423,6 @@ shull2d(const torch::Tensor& points)
     auto options = points.options().dtype(torch::kInt64);
     auto triangles = torch::tensor(std::move(hull.triangles), options);
 
-    std::cout << "triangles move to tensor" << std::endl;
     return triangles.view({tn, 3});
 }
 
