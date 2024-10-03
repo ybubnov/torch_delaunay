@@ -81,14 +81,8 @@ ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
     return orient2d(p0, p1, p2).gt(0).all().item<bool>();
 }
 
-inline bool
-ccw(const std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>& points)
-{
-    return ccw(std::get<0>(points), std::get<1>(points), std::get<2>(points));
-}
 
-
-struct _SHull {
+struct shull {
     std::vector<int64_t> hash;
     std::vector<int64_t> triangles;
     std::unordered_map<int64_t, int64_t> halfedges;
@@ -103,7 +97,7 @@ struct _SHull {
 
     const torch::Tensor& m_points;
 
-    _SHull(int64_t n, const torch::Tensor& center, const torch::Tensor& points)
+    shull(int64_t n, const torch::Tensor& center, const torch::Tensor& points)
     : hash(),
       triangles(),
       halfedges(),
@@ -172,6 +166,25 @@ struct _SHull {
         return edge;
     }
 
+    int64_t
+    push_tri(const std::tuple<int64_t, int64_t, int64_t>& triangle)
+    {
+        return push_tri(std::get<0>(triangle), std::get<1>(triangle), std::get<2>(triangle));
+    }
+
+    bool
+    ccw(int64_t i0, int64_t i1, int64_t i2) const
+    {
+        const auto [p0, p1, p2] = get_tri(i0, i1, i2);
+        return orient2d(p0, p1, p2).gt(0).all().item<bool>();
+    }
+
+    bool
+    ccw(const std::tuple<int64_t, int64_t, int64_t>& tri) const
+    {
+        return ccw(std::get<0>(tri), std::get<1>(tri), std::get<2>(tri));
+    }
+
     const std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
     get_tri(int64_t i0, int64_t i1, int64_t i2) const
     {
@@ -189,6 +202,20 @@ struct _SHull {
         return flip(edge + 2);
     }
 
+    int64_t
+    push_forward_edges(const std::tuple<int64_t, int64_t, int64_t>& triangle)
+    {
+        const auto [j, i, k] = triangle;
+        return push_edges(tri[i], -1, tri[j]);
+    }
+
+    int64_t
+    push_backward_edges(const std::tuple<int64_t, int64_t, int64_t>& triangle)
+    {
+        const auto [j, i, k] = triangle;
+        return push_edges(-1, tri[k], tri[j]);
+    }
+
     void
     push_edge(int64_t a, int64_t b)
     {
@@ -198,6 +225,27 @@ struct _SHull {
         if (b != -1) {
             halfedges[b] = a;
         }
+    }
+
+    std::tuple<int64_t, int64_t, int64_t>
+    forward(const std::tuple<int64_t, int64_t, int64_t>& triangle, int64_t edge)
+    {
+        auto [j, i, k] = triangle;
+        tri[i] = edge;
+
+        std::swap(j, next[j]);
+        return std::forward_as_tuple(j, i, next[j]);
+    }
+
+    std::tuple<int64_t, int64_t, int64_t>
+    backward(const std::tuple<int64_t, int64_t, int64_t>& triangle, int64_t edge)
+    {
+        auto [j, i, k] = triangle;
+        tri[j] = edge;
+        next[k] = k;
+
+        std::swap(k, prev[k]);
+        return std::forward_as_tuple(prev[k], i, k);
     }
 
     inline std::tuple<int64_t, int64_t, int64_t>
@@ -328,7 +376,7 @@ shull2d(const torch::Tensor& points)
     const auto ordering = at::argsort(torch_delaunay::dist(points, center));
 
     const auto n = points.size(0);
-    _SHull hull(n, center, points);
+    shull hull(n, center, points);
 
     std::cout << "hull created" << std::endl;
 
@@ -345,34 +393,24 @@ shull2d(const torch::Tensor& points)
     hull.tri[i1] = 1;
     hull.tri[i2] = 2;
 
-    std::cout << "seed: " << i0 << "," << i1 << "," << i2 << std::endl;
     hull.push_tri(i0, i1, i2);
     hull.push_edges(-1, -1, -1);
 
-    for (const auto k : c10::irange(n)) {
+    // 3 first points are already part of the triangulation, therefore they can be skipped.
+    for (const auto k : c10::irange(3, n)) {
         auto i = ordering[k].item<int64_t>();
         std::cout << "processing [" << k << "]" << std::endl;
 
-        // Skip points of the seed triangle, they are already part of the final hull.
-        if (i == i0 || i == i1 || i == i2) {
-            continue;
-        }
-
         auto is = hull.find_visible_edge(i);
-
         // TODO: Make sure what we found is on the hull?
         auto ie = hull.prev[is];
 
-        // Advance until we find a place in the hull were the current point can be added.
-        while (ccw(hull.get_tri(ie, i, hull.next[ie])) && ie != -1) {
-            // TODO: could it be an infinite loop?
+        while (hull.ccw(ie, i, hull.next[ie]) && ie != -1) {
             ie = hull.next[ie];
             std::cout << "\tfind place" << std::endl;
         }
 
-        // TODO: Likely a near-duplicate?
         if (ie == -1) {
-            std::cout << "continue" << std::endl;
             continue;
         }
 
@@ -384,35 +422,32 @@ shull2d(const torch::Tensor& points)
         // Traverse forward through the hull, adding more triangles and flipping
         // them recursively.
         auto in = hull.next[ie];
+        auto tri = std::make_tuple(in, i, hull.next[in]);
 
-        while (!ccw(hull.get_tri(in, i, hull.next[in]))) {
-            edge0 = hull.push_tri(in, i, hull.next[in]);
-            edge1 = hull.push_edges(hull.tri[i], -1, hull.tri[in]);
-            hull.tri[i] = edge1;
+        while (!hull.ccw(tri)) {
+            edge0 = hull.push_tri(tri);
+            edge1 = hull.push_forward_edges(tri);
 
-            std::swap(in, hull.next[in]);
+            tri = hull.forward(tri, edge1);
+            in = std::get<0>(tri);
             std::cout << "\tforward" << std::endl;
         }
 
         // Traverse backward through the hull, adding more triangles and flipping
         // them recursively.
-        is = hull.prev[is];
+        if (hull.prev[is] == ie) {
+            auto tri = std::make_tuple(hull.prev[ie], i, ie);
+            while (!hull.ccw(tri)) {
+                edge0 = hull.push_tri(tri);
+                edge1 = hull.push_backward_edges(tri);
 
-        if (ie == is) {
-            while (!ccw(hull.get_tri(hull.prev[ie], i, ie))) {
-                edge0 = hull.push_tri(hull.prev[ie], i, ie);
-                edge1 = hull.push_edges(-1, hull.tri[ie], hull.tri[hull.prev[ie]]);
-
-                hull.tri[hull.prev[ie]] = edge0;
-
-                hull.next[ie] = ie;
-                std::swap(ie, hull.prev[ie]);
+                tri = hull.backward(tri, edge0);
+                ie = std::get<2>(tri);
                 std::cout << "\tbackward" << std::endl;
             }
         }
 
         hull.start = ie;
-
         hull.insert_visible_edge(i, in);
         hull.insert_visible_edge(ie, i);
     }
