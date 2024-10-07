@@ -199,6 +199,8 @@ struct shull {
         tri[i] = edge;
 
         std::swap(j, next[j]);
+        TORCH_CHECK(j != next[j], "shull2d: encountered flat simplex");
+
         return std::forward_as_tuple(j, i, next[j]);
     }
 
@@ -210,6 +212,8 @@ struct shull {
         next[k] = k;
 
         std::swap(k, prev[k]);
+        TORCH_CHECK(k != prev[k], "shull2d: encountered flat simplex");
+
         return std::forward_as_tuple(prev[k], i, k);
     }
 
@@ -220,6 +224,20 @@ struct shull {
         int64_t edge1 = edge0 + (edge + 1) % 3;
         int64_t edge2 = edge0 + (edge + 2) % 3;
         return std::forward_as_tuple(edge, edge1, edge2);
+    }
+
+    void
+    flip_tri(int64_t edge0, int64_t edge2)
+    {
+        auto end = start;
+        do {
+            if (tri[end] == edge2) {
+                tri[end] = edge0;
+                break;
+            }
+
+            end = prev[end];
+        } while (end != start);
     }
 
     /// Flip triangle edges recursively until they all comply to Delaunay condition.
@@ -253,15 +271,7 @@ struct shull {
                 triangles[b] = triangles[ar];
 
                 if (halfedges[bl] == -1) {
-                    auto ie = start;
-                    do {
-                        if (tri[ie] == bl) {
-                            tri[ie] = a;
-                            break;
-                        }
-
-                        ie = prev[ie];
-                    } while (ie != start);
+                    flip_tri(a, bl);
                 }
 
                 push_edge(a, halfedges[bl]);
@@ -308,7 +318,10 @@ shull_seed2d(const torch::Tensor& points)
     // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
     // at 0 index will be a point with the minimum radius.
     index2 = indices[0];
+    auto radii2 = values[0].item<double>();
     auto p2 = points.index({index2});
+
+    TORCH_CHECK(!std::isnan(radii2), "shull2d is missing third point for an initial simplex");
 
     if (ccw(p0, p1, p2)) {
         std::swap(index1, index2);
@@ -326,6 +339,7 @@ torch::Tensor
 shull2d(const torch::Tensor& points)
 {
     TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got: ", points.dim(), "D");
+    TORCH_CHECK(points.size(0) > 2, "shull2d expects at least 3 points, got: ", points.size(0));
 
     // Find the seed triangle (comprised of vertices located approximately
     // at the center of the point cloud).
@@ -360,6 +374,7 @@ shull2d(const torch::Tensor& points)
     for (const auto k : c10::irange(3, n)) {
         auto i = ordering[k].item<int64_t>();
         std::cout << "processing [" << k << "]" << std::endl;
+        // TODO: add an option to the operation to delete similar points.
 
         auto is = hull.find_visible_edge(i);
         // TODO: Make sure what we found is on the hull?
@@ -390,7 +405,6 @@ shull2d(const torch::Tensor& points)
 
             tri = hull.forward(tri, edge1);
             in = std::get<0>(tri);
-            std::cout << "\tforward" << std::endl;
         }
 
         // Traverse backward through the hull, adding more triangles and flipping
