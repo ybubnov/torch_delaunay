@@ -1,7 +1,7 @@
-# Torch Delaunay - The delaunay triangulation library for PyTorch
+# Torch Delaunay - The Delaunay triangulation library for PyTorch
 
-This is a fast library for computing [Delaunay triangulation][TriangulationWiki] of 2-dimensional
-points.
+This is a fast library for computing [Delaunay triangulation](https://en.wikipedia.org/wiki/Delaunay_triangulation)
+of 2-dimensional points.
 
 The implementation is based on a sweep-algorithm, introduced by David Sinclair[^1] and later
 improved by Volodymyr Agafonkin[^2].
@@ -34,6 +34,5 @@ The Torch Delaunay is distributed under GPLv3 license. See the [LICENSE](LICENSE
 license text.
 
 
-[TriangulationWiki]: https://en.wikipedia.org/wiki/Delaunay_triangulation
-[1]: [David Sinclair - S-hull: a fast radial sweep-hull routine for Delaunay triangulation](https://arxiv.org/abs/1604.01428)
-[2]: [Delaunator - An incredibly fast and robust JavaScript library for Delaunay triangulation of 2D points](https://github.com/mapbox/delaunator)
+[1]: David Sinclair - [S-hull: a fast radial sweep-hull routine for Delaunay triangulation](https://arxiv.org/abs/1604.01428).
+[2]: Volodymyr Agafonkin - [Delaunator: An incredibly fast and robust JavaScript library for Delaunay triangulation of 2D points](https://github.com/mapbox/delaunator).
