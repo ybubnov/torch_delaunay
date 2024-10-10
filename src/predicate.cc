@@ -9,8 +9,9 @@ using namespace torch::indexing;
 namespace torch_delaunay {
 
 
-// orient2d returns positive value if p0, p1, p2 are in counter-clockwise order.
-// orient2d returns negative value if p0, p1, p2 are in clockwise order.
+// Returns positive value if p0, p1, p2 are in counter-clockwise order.
+//
+// In other words, it returns negative value if p0, p1, p2 are in clockwise order.
 torch::Tensor
 orient2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 {
@@ -22,8 +23,9 @@ orient2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& 
 }
 
 
-// incircle2d returns a positive value if q lies inside the oriented circle p0p1p2.
-// incircle2d returns a negative value if q lies outside the oriented circle p0p1p2.
+// Returns a positive value if q lies inside the oriented circle p0p1p2.
+//
+// In other words, it returns a negative value if q lies outside the oriented circle p0p1p2.
 torch::Tensor
 incircle2d(
     const torch::Tensor& p0,
@@ -42,6 +44,7 @@ incircle2d(
 
     return torch::linalg::det(A).sign();
 }
+
 
 bool
 incircle2d(const torch::Tensor& points, const torch::Tensor& q)
