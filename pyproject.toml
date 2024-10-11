@@ -37,7 +37,7 @@ dependencies = ["shapely>=2.0.0", "torch >= 2.3.0, < 2.4.0"]
 [project.urls]
 Funding = "https://github.com/sponsors/ybubnov"
 Homepage = "https://github.com/ybubnov/torch_delaunay"
-Source = "https://github.com/ybubnov/torch_delaunay"
+Repository = "https://github.com/ybubnov/torch_delaunay"
 
 
 [project.optional-dependencies]

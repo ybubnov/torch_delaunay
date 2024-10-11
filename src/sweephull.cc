@@ -88,7 +88,7 @@ struct shull {
     /// Computes the hash key for the given 2-dimensional point.
     ///
     /// The key represents pseudo-angle from the center of the triangulation.
-    int64_t
+    std::size_t
     hash_key(const torch::Tensor& p) const
     {
         const auto delta = p - m_center;
@@ -99,7 +99,7 @@ struct shull {
         const auto angle = (dy > 0.0 ? 3.0 - rad : 1.0 + rad) / 4.0;
 
         const auto k = std::llround(std::floor(angle * static_cast<double>(hash.size())));
-        return static_cast<std::int64_t>(k) % hash.size();
+        return static_cast<std::size_t>(k) % hash.size();
     }
 
     void
@@ -117,7 +117,7 @@ struct shull {
         const auto key = hash_key(m_points[i]);
         int64_t edge_index = 0;
 
-        for (int64_t j = 0; j < hash.size(); j++) {
+        for (std::size_t j = 0; j < hash.size(); j++) {
             edge_index = hash[(key + j) % hash.size()];
 
             if (edge_index != -1 && edge_index != next[edge_index]) {
@@ -367,8 +367,6 @@ shull2d(const torch::Tensor& points)
     const auto n = points.size(0);
     shull hull(n, center, points);
 
-    std::cout << "hull created" << std::endl;
-
     auto i0 = indices[0].item<int64_t>();
     auto i1 = indices[1].item<int64_t>();
     auto i2 = indices[2].item<int64_t>();
@@ -388,7 +386,6 @@ shull2d(const torch::Tensor& points)
     // 3 first points are already part of the triangulation, therefore they can be skipped.
     for (const auto k : c10::irange(3, n)) {
         auto i = ordering[k].item<int64_t>();
-        std::cout << "processing [" << k << "]" << std::endl;
         // TODO: add an option to the operation to delete similar points.
 
         auto is = hull.find_visible_edge(i);
@@ -397,7 +394,6 @@ shull2d(const torch::Tensor& points)
 
         while (hull.ccw(ie, i, hull.next[ie]) && ie != -1) {
             ie = hull.next[ie];
-            std::cout << "\tfind place" << std::endl;
         }
 
         if (ie == -1) {
@@ -432,7 +428,6 @@ shull2d(const torch::Tensor& points)
 
                 tri = hull.backward(tri, edge0);
                 ie = std::get<2>(tri);
-                std::cout << "\tbackward" << std::endl;
             }
         }
 
