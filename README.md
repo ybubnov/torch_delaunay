@@ -8,7 +8,7 @@ improved by Volodymyr Agafonkin[^2].
 
 Here is an example of triangulation output produced by Torch Delaunay library for a random set of
 points:
-![example](docs/index.png)
+![example](docs/index.jpg)
 
 ## Installation
 
