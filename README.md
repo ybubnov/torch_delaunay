@@ -6,6 +6,10 @@ of 2-dimensional points.
 The implementation is based on a sweep-algorithm, introduced by David Sinclair[^1] and later
 improved by Volodymyr Agafonkin[^2].
 
+Here is an example of triangulation output produced by Torch Delaunay library for a random set of
+points:
+![example](docs/index.jpg)
+
 ## Installation
 
 The library is distributed as PyPI package, to install the package, execute the following
@@ -35,4 +39,5 @@ license text.
 
 
 [^1]: David Sinclair - [S-hull: a fast radial sweep-hull routine for Delaunay triangulation](https://arxiv.org/abs/1604.01428).
+
 [^2]: Volodymyr Agafonkin - [Delaunator: An incredibly fast and robust JavaScript library for Delaunay triangulation of 2D points](https://github.com/mapbox/delaunator).
