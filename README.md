@@ -6,6 +6,10 @@ of 2-dimensional points.
 The implementation is based on a sweep-algorithm, introduced by David Sinclair[^1] and later
 improved by Volodymyr Agafonkin[^2].
 
+Here is an example of triangulation output produced by Torch Delaunay library for a random set of
+points:
+![example](docs/index.png)
+
 ## Installation
 
 The library is distributed as PyPI package, to install the package, execute the following
