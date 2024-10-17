@@ -26,7 +26,14 @@ circumcenter2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Te
 
 
 torch::Tensor
+circumcenter2d(const torch::Tensor& points);
+
+
+torch::Tensor
 circumradius2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2);
+
+torch::Tensor
+circumradius2d(const torch::Tensor& points);
 
 
 } // namespace torch_delaunay

@@ -14,6 +14,7 @@
 /// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cmath>
+#include <functional>
 
 #include <torch_delaunay/predicate.h>
 #include <torch_delaunay/sweephull.h>
@@ -27,22 +28,6 @@ inline torch::Tensor
 euclidean_distance2d(const torch::Tensor& p, const torch::Tensor& q)
 {
     return torch::linalg::norm(p - q, /*ord=*/2, /*dim=*/1, false, c10::nullopt);
-}
-
-
-inline bool
-ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
-{
-    return orient2d(p0, p1, p2).gt(0).all().item<bool>();
-}
-
-
-torch::Tensor
-circumcenter2d(const torch::Tensor& points)
-{
-    auto center
-        = circumcenter2d(points[0].unsqueeze(0), points[1].unsqueeze(0), points[2].unsqueeze(0));
-    return center.squeeze(0);
 }
 
 
@@ -147,11 +132,18 @@ struct shull {
     /// Returns true when specified points are ordered counterclockwise.
     ///
     /// In other words, method returns true when i2 lies on to the left of (i0, i1) vector.
-    bool
+    inline static bool
+    ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
+    {
+        return orient2d(p0, p1, p2).gt(0).all().item<bool>();
+    }
+
+    /// Returns true when specified points are ordered counterclockwise.
+    inline bool
     ccw(int64_t i0, int64_t i1, int64_t i2) const
     {
         const auto [p0, p1, p2] = get_tri(i0, i1, i2);
-        return orient2d(p0, p1, p2).gt(0).all().item<bool>();
+        return ccw(p0, p1, p2);
     }
 
     /// Returns true when specified points are ordered counterclockwise.
@@ -161,6 +153,31 @@ struct shull {
         return ccw(std::get<0>(tri), std::get<1>(tri), std::get<2>(tri));
     }
 
+    static bool
+    iscoplanar(
+        const torch::Tensor& p0,
+        const torch::Tensor& p1,
+        const torch::Tensor& p2,
+        std::optional<double> eps
+    )
+    {
+        auto radius = circumradius2d(p0, p1, p2).item<double>();
+        return std::isnan(radius) || std::isinf(radius)
+               || (eps.has_value() && radius < eps.value());
+    }
+
+    /// Return true, when the specified triangle (simplex) is coplanar.
+    ///
+    /// Here we use an extended version of coplanar points. Apart from considering points that
+    /// reside on the same line we also validate that the circumscribed radius is larger than
+    /// a specified epsilon.
+    bool
+    iscoplanar(int64_t i0, int64_t i1, int64_t i2, std::optional<double> eps) const
+    {
+        const auto [p0, p1, p2] = get_tri(i0, i1, i2);
+        return iscoplanar(p0, p1, p2, /*eps=*/eps);
+    }
+
     /// Returns coordinates of the specified triangle.
     ///
     /// Method does not checks the boundaries of the specified indices, therefore, when
@@ -168,7 +185,9 @@ struct shull {
     const std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
     get_tri(int64_t i0, int64_t i1, int64_t i2) const
     {
-        return std::forward_as_tuple(m_points[i0], m_points[i1], m_points[i2]);
+        return std::forward_as_tuple(
+            m_points[i0].view({-1, 2}), m_points[i1].view({-1, 2}), m_points[i2].view({-1, 2})
+        );
     }
 
     int64_t
@@ -214,7 +233,7 @@ struct shull {
         tri[i] = edge;
 
         std::swap(j, next[j]);
-        TORCH_CHECK(j != next[j], "shull2d: encountered flat simplex");
+        TORCH_CHECK(j != next[j], "shull2d: encountered coplanar simplex");
 
         return std::forward_as_tuple(j, i, next[j]);
     }
@@ -227,7 +246,7 @@ struct shull {
         next[k] = k;
 
         std::swap(k, prev[k]);
-        TORCH_CHECK(k != prev[k], "shull2d: encountered flat simplex");
+        TORCH_CHECK(k != prev[k], "shull2d: encountered coplanar simplex");
 
         return std::forward_as_tuple(prev[k], i, k);
     }
@@ -308,11 +327,12 @@ struct shull {
 /// The method computes the center of all specified points and returns coordinates and indices
 /// of the triangle comprised of points with the lowest distance from the center of point cloud.
 std::tuple<torch::Tensor, torch::Tensor>
-shull_seed2d(const torch::Tensor& points)
+shull_seed2d(const torch::Tensor& points, std::optional<double> eps)
 {
     // Indices of the seed triangle.
     torch::Tensor index0, index1, index2;
     torch::Tensor values, indices;
+    torch::Tensor p0, p1, p2;
 
     // Choose seed points close to a centroid of the point cloud.
     auto [min, max] = points.aminmax(0);
@@ -323,22 +343,34 @@ shull_seed2d(const torch::Tensor& points)
     index0 = indices[0];
     index1 = indices[1];
 
-    auto p0 = points.index({index0});
-    auto p1 = points.index({index1});
+    p0 = points.index({index0}).view({-1, 2});
+    p1 = points.index({index1}).view({-1, 2});
 
     // Find the third point such that forms the smallest circumcircle with i0 and i1.
-    const auto radii = circumradius2d(p0.view({-1, 2}), p1.view({-1, 2}), points);
-
+    const auto radii = circumradius2d(p0, p1, points);
     std::tie(values, indices) = at::topk(radii, 3, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
+
     // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
     // at 0 index will be a point with the minimum radius.
-    index2 = indices[0];
-    auto radii2 = values[0].item<double>();
-    auto p2 = points.index({index2});
+    std::size_t i = 0;
+    for (; i < values.size(0); i++) {
+        index2 = indices[i];
+        p2 = points.index({index2}).view({-1, 2});
 
-    TORCH_CHECK(!std::isnan(radii2), "shull2d is missing third point for an initial simplex");
+        if (!shull::iscoplanar(p0, p1, p2, /*eps=*/eps)) {
+            break;
+        }
+    }
 
-    if (ccw(p0, p1, p2)) {
+    // There are no non-coplanar simplices, therefore return empty tensors in the result.
+    if (i == values.size(0)) {
+        auto points_out = torch::empty({0, 2}, points.options());
+        auto indices_out = torch::empty({0, 3}, indices.options());
+
+        return std::forward_as_tuple(points_out, indices_out);
+    }
+
+    if (shull::ccw(p0, p1, p2)) {
         std::swap(index1, index2);
         std::swap(p1, p2);
     }
@@ -351,17 +383,23 @@ shull_seed2d(const torch::Tensor& points)
 
 
 torch::Tensor
-shull2d(const torch::Tensor& points)
+shull2d(const torch::Tensor& points, std::optional<double> eps)
 {
-    TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got: ", points.dim(), "D");
-    TORCH_CHECK(points.size(0) > 2, "shull2d expects at least 3 points, got: ", points.size(0));
+    TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got ", points.dim(), "D");
+    TORCH_CHECK(points.size(0) >= 3, "shull2d expects at least 3 points, got ", points.size(0));
+    TORCH_CHECK(points.size(1) == 2, "shull2d expects 2-dim points, got ", points.size(1), "-dim");
 
     // Find the seed triangle (comprised of vertices located approximately
     // at the center of the point cloud).
-    const auto [triangle, indices] = shull_seed2d(points);
+    const auto [triangle, indices] = shull_seed2d(points, /*eps=*/eps);
+    const auto triangle_options = points.options().dtype(torch::kInt64);
+
+    if (triangle.size(0) == 0) {
+        return torch::empty({0, 3}, triangle_options);
+    }
 
     // Radially resort the points.
-    const auto center = circumcenter2d(triangle);
+    const auto center = circumcenter2d(triangle.unsqueeze(0)).squeeze(0);
     const auto ordering = at::argsort(euclidean_distance2d(points, center));
 
     const auto n = points.size(0);
@@ -386,8 +424,6 @@ shull2d(const torch::Tensor& points)
     // 3 first points are already part of the triangulation, therefore they can be skipped.
     for (const auto k : c10::irange(3, n)) {
         auto i = ordering[k].item<int64_t>();
-        // TODO: add an option to the operation to delete similar points.
-
         auto is = hull.find_visible_edge(i);
         // TODO: Make sure what we found is on the hull?
         auto ie = hull.prev[is];
@@ -395,8 +431,14 @@ shull2d(const torch::Tensor& points)
         while (hull.ccw(ie, i, hull.next[ie]) && ie != -1) {
             ie = hull.next[ie];
         }
-
+        // TODO: what to do with this vertex: maybe raise an exception?
         if (ie == -1) {
+            continue;
+        }
+
+        // Ensure that each triangle's circumradius is at least the size of the specified
+        // epsilon value, skip the point from triangulation otherwise.
+        if (hull.iscoplanar(ie, i, hull.next[ie], /*eps=*/eps)) {
             continue;
         }
 
@@ -437,8 +479,7 @@ shull2d(const torch::Tensor& points)
     }
 
     int64_t tn = hull.triangles.size() / 3;
-    auto options = points.options().dtype(torch::kInt64);
-    auto triangles = torch::tensor(std::move(hull.triangles), options);
+    auto triangles = torch::tensor(std::move(hull.triangles), triangle_options);
 
     return triangles.view({tn, 3});
 }

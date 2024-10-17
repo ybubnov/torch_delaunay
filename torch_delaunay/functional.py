@@ -13,16 +13,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from typing import Optional
+
 import torch_delaunay._C as _C
 from torch import Tensor
 
 
-def shull2d(points: Tensor) -> Tensor:
+def shull2d(points: Tensor, eps: Optional[float] = None) -> Tensor:
     """Computes Delaunay tessellation for 2-dimensional coordinates.
 
+    Note:
+        This implementation automatically deletes coplanar simplices, and therefore could
+        return an empty tensor in the result.
+
     Args:
-        points: A list of 2D coordinates where each coordinate is represented as a tuple (x, y),
-            where x is the longitude and y is the latitude.
+        points: A list of 2D coordinates where each coordinate is represented as a tuple (x, y).
+        eps: If specified, filters out simplices with a circumscribed circle radius smaller than
+            the given value.
 
     Shape:
         - Input: :math:`(*, 2)`, where 2 comprises x and y coordinates.
@@ -36,7 +43,7 @@ def shull2d(points: Tensor) -> Tensor:
     >>> points = torch.rand((100, 2), dtype=torch.float64)
     >>> simplices = shull2d(points)
     """
-    return _C.shull2d(points)
+    return _C.shull2d(points, eps)
 
 
 def circumcenter2d(p0: Tensor, p1: Tensor, p2: Tensor) -> Tensor:

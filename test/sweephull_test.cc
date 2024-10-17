@@ -56,26 +56,40 @@ BOOST_AUTO_TEST_CASE(test_shull2d_no_seed)
 {
     auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
 
-    BOOST_CHECK_EXCEPTION(
-        shull2d(torch::zeros({3, 2}, options)), c10::Error,
-        exception_contains_text<c10::Error>("missing third point for an initial simplex")
-    );
+    auto simplices = shull2d(torch::zeros({3, 2}, options));
+    BOOST_CHECK_EQUAL(simplices.size(0), 0);
 
-    BOOST_CHECK_EXCEPTION(
-        shull2d(torch::zeros({16, 2})), c10::Error,
-        exception_contains_text<c10::Error>("missing third point for an initial simplex")
-    );
+    simplices = shull2d(torch::zeros({16, 2}));
+    BOOST_CHECK_EQUAL(simplices.size(0), 0);
 }
 
 
-BOOST_AUTO_TEST_CASE(test_shull2d_flat_simplex)
+BOOST_AUTO_TEST_CASE(test_shull2d_inf_coplanar)
 {
     auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
     auto points = torch::tensor({{0.0, 0.0}, {1.0, 1.0}, {2.0, 2.0}, {3.0, 3.0}}, options);
 
-    BOOST_CHECK_EXCEPTION(
-        shull2d(points), c10::Error, exception_contains_text<c10::Error>("encountered flat simplex")
-    );
+    auto simplices = shull2d(points);
+    BOOST_CHECK_EQUAL(simplices.size(0), 0);
+
+    simplices = shull2d(points);
+    BOOST_CHECK_EQUAL(simplices.size(0), 0);
+}
+
+
+BOOST_AUTO_TEST_CASE(test_shull2d_nan_coplanar)
+{
+    auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU);
+    auto points = torch::tensor({{0.0, 0.0}, {1.0, 0.0}, {0.0, 2.0}, {0.0, 0.0}}, options);
+
+    auto simplices = shull2d(points);
+    auto radii = circumradius2d(points.index({simplices}));
+    auto centers = circumcenter2d(points.index({simplices}));
+
+    // When epsilon is specified, triangulation contains only finite faces.
+    BOOST_CHECK_EQUAL(simplices.size(0), 1);
+    BOOST_CHECK(!radii.isnan().any().item<bool>());
+    BOOST_CHECK(!centers.isnan().any().item<bool>());
 }
 
 
