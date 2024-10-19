@@ -21,9 +21,11 @@ aux_source_directory(src torch_delaunay_SOURCES)
 
 # Add the testing directory.
 add_subdirectory(test)
+add_subdirectory(benchmark)
 
 
 add_library(torch_delaunay SHARED ${torch_delaunay_SOURCES})
+add_compile_options(-O3 -DNDEBUG)
 set_target_properties(torch_delaunay PROPERTIES CXX_STANDARD 17)
 set_target_properties(torch_delaunay PROPERTIES VERSION ${torch_delaunay_LIBRARY_VERSION})
 set_target_properties(torch_delaunay PROPERTIES SOVERSION ${torch_delaunay_LIBRARY_SOVERSION})
