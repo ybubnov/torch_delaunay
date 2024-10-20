@@ -33,7 +33,7 @@ euclidean_distance2d(const torch::Tensor& p, const torch::Tensor& q)
 
 
 /// An operation to compute Delaunay-triangulation using sweep-hull algorithm.
-template <typename scalar_t = double>
+template <typename scalar_t>
 struct shull {
     using triangle_type = std::tuple<int64_t, int64_t, int64_t>;
 
@@ -46,6 +46,10 @@ struct shull {
     /// Triangles are used to store the final triangulation simplices.
     std::vector<int64_t> triangles;
     std::vector<int64_t> halfedges;
+
+    /// A common stack for `flip` operation, keep it here to reduce a number of
+    /// de-allocations, also use vector as an underlying storage.
+    std::stack<int64_t, std::vector<int64_t>> unvisited_edges;
 
     std::vector<int64_t> tri;
 
@@ -63,6 +67,7 @@ struct shull {
     : hash(),
       triangles(),
       halfedges(),
+      unvisited_edges(),
       tri(n, -1),
       next(n, -1),
       prev(n, -1),
@@ -70,9 +75,13 @@ struct shull {
       m_points_ptr(points.accessor<scalar_t, 2>()),
       start(0)
     {
-        auto hash_size = static_cast<int64_t>(std::llround(std::ceil(std::sqrt(n))));
-        hash.resize(hash_size);
+        auto hash_size = std::llround(std::ceil(std::sqrt(n)));
+        hash.resize(static_cast<std::size_t>(hash_size));
         std::fill(hash.begin(), hash.end(), -1);
+
+        std::size_t max_triangles = n < 3 ? 1 : 2 * n - 5;
+        triangles.reserve(max_triangles);
+        halfedges.reserve(max_triangles);
     }
 
     /// Computes the hash key for the given 2-dimensional point.
@@ -142,6 +151,7 @@ struct shull {
         return orient2d_kernel<scalar_t>(p0, p1, p2) > scalar_t(0);
     }
 
+    /// Returns true when specified points are ordered counterclockwise.
     inline static bool
     ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
     {
@@ -165,7 +175,7 @@ struct shull {
         return ccw(std::get<0>(tri), std::get<1>(tri), std::get<2>(tri));
     }
 
-    /// Return true, when the specified triangle (simplex) is coplanar.
+    /// Returns true, when the specified triangle (simplex) is coplanar.
     ///
     /// Here we use an extended interpretation of coplanar points. Apart from considering points
     /// that reside on the same line we also validate that the circumscribed radius is larger than
@@ -178,7 +188,7 @@ struct shull {
                || (eps.has_value() && radius < eps.value());
     }
 
-    /// Overridden version of iscoplanar for 1-dimensional tensors representing points.
+    /// Returns true, when the specified triangle is coplanar.
     static bool
     iscoplanar(
         const torch::Tensor& p0,
@@ -192,7 +202,7 @@ struct shull {
         );
     }
 
-    /// Overridden version of iscoplanar for s-hull triangles.
+    /// Returns true, when the specified triangle is coplanar.
     bool
     iscoplanar(int64_t i0, int64_t i1, int64_t i2, std::optional<scalar_t> eps) const
     {
@@ -278,7 +288,7 @@ struct shull {
         std::swap(j, next[j]);
         TORCH_CHECK(j != next[j], "shull2d: encountered coplanar simplex");
 
-        return std::forward_as_tuple(j, i, next[j]);
+        return std::make_tuple(j, i, next[j]);
     }
 
     triangle_type
@@ -291,7 +301,7 @@ struct shull {
         std::swap(k, prev[k]);
         TORCH_CHECK(k != prev[k], "shull2d: encountered coplanar simplex");
 
-        return std::forward_as_tuple(prev[k], i, k);
+        return std::make_tuple(prev[k], i, k);
     }
 
     inline triangle_type
@@ -300,7 +310,7 @@ struct shull {
         int64_t edge0 = 3 * (edge / 3);
         int64_t edge1 = edge0 + (edge + 1) % 3;
         int64_t edge2 = edge0 + (edge + 2) % 3;
-        return std::forward_as_tuple(edge, edge1, edge2);
+        return std::make_tuple(edge, edge1, edge2);
     }
 
     void
@@ -326,7 +336,7 @@ struct shull {
         int64_t ar = -1, al = -1;
         int64_t br = -1, bl = -1;
 
-        std::stack<int64_t> unvisited_edges({edge});
+        unvisited_edges.push(edge);
 
         while (unvisited_edges.size() > 0) {
             auto a = unvisited_edges.top();
@@ -442,7 +452,7 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     const auto ordering_ptr = ordering.template accessor<int64_t, 1>();
 
     const auto n = points.size(0);
-    shull hull(n, center, points);
+    shull<scalar_t> hull(n, center, points);
 
     auto indices_ptr = indices.template accessor<int64_t, 2>();
     auto i0 = indices_ptr[0][0];
