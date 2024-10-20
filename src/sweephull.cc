@@ -38,7 +38,6 @@ struct shull {
     using triangle_type = std::tuple<int64_t, int64_t, int64_t>;
 
     using point_type = at::TensorAccessor<scalar_t, 1>;
-
     using point_array_type = at::TensorAccessor<scalar_t, 2>;
 
     /// Hash stores radially-sorted edges, and used to query a visible vertex.
@@ -46,7 +45,7 @@ struct shull {
 
     /// Triangles are used to store the final triangulation simplices.
     std::vector<int64_t> triangles;
-    std::unordered_map<int64_t, int64_t> halfedges;
+    std::vector<int64_t> halfedges;
 
     std::vector<int64_t> tri;
 
@@ -204,11 +203,11 @@ struct shull {
     inline bool
     incircle(int64_t edge0, int64_t edge1, int64_t edge2, int64_t edge3) const
     {
-        return incircle2d_kernel<scalar_t>(
-                   m_points_ptr[triangles[edge0]], m_points_ptr[triangles[edge1]],
-                   m_points_ptr[triangles[edge2]], m_points_ptr[triangles[edge3]]
-               )
-               < scalar_t(0);
+        auto sign = incircle2d_kernel<scalar_t>(
+            m_points_ptr[triangles[edge0]], m_points_ptr[triangles[edge1]],
+            m_points_ptr[triangles[edge2]], m_points_ptr[triangles[edge3]]
+        );
+        return sign < scalar_t(0);
     }
 
     /// Returns coordinates of the specified triangle.
@@ -246,14 +245,27 @@ struct shull {
         return push_edges(-1, tri[k], tri[j]);
     }
 
+    inline void
+    push_halfedge(int64_t a, int64_t b)
+    {
+        TORCH_CHECK(a <= halfedges.size(), "shull2d: encountered wrong half-edge: ", a, " -> ", b);
+
+        if (a < halfedges.size()) {
+            halfedges[a] = b;
+        }
+        if (a == halfedges.size()) {
+            halfedges.push_back(b);
+        }
+    }
+
     void
     push_edge(int64_t a, int64_t b)
     {
         if (a != -1) {
-            halfedges[a] = b;
+            push_halfedge(a, b);
         }
         if (b != -1) {
-            halfedges[b] = a;
+            push_halfedge(b, a);
         }
     }
 
