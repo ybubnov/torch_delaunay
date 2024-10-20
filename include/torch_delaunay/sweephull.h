@@ -17,6 +17,7 @@
 
 #include <optional>
 
+#include <ATen/core/Scalar.h>
 #include <torch/torch.h>
 
 
@@ -24,7 +25,7 @@ namespace torch_delaunay {
 
 
 torch::Tensor
-shull2d(const torch::Tensor& points, std::optional<double> eps = std::nullopt);
+shull2d(const torch::Tensor& points, std::optional<const at::Scalar> eps = std::nullopt);
 
 
 } // namespace torch_delaunay

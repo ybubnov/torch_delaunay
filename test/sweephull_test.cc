@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(test_shull2d_inf_coplanar)
 
 BOOST_AUTO_TEST_CASE(test_shull2d_nan_coplanar)
 {
-    auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU);
+    auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
     auto points = torch::tensor({{0.0, 0.0}, {1.0, 0.0}, {0.0, 2.0}, {0.0, 0.0}}, options);
 
     auto simplices = shull2d(points);
@@ -90,6 +90,16 @@ BOOST_AUTO_TEST_CASE(test_shull2d_nan_coplanar)
     BOOST_CHECK_EQUAL(simplices.size(0), 1);
     BOOST_CHECK(!radii.isnan().any().item<bool>());
     BOOST_CHECK(!centers.isnan().any().item<bool>());
+}
+
+
+BOOST_AUTO_TEST_CASE(test_shull2d_1000)
+{
+    auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
+    auto points = torch::rand({1000, 2}, options);
+
+    auto simplices = shull2d(points);
+    BOOST_CHECK(simplices.size(0) > 100);
 }
 
 

@@ -35,7 +35,7 @@ BOOST_AUTO_TEST_CASE(test_incircle2d)
     auto triangle = torch::tensor({0, 1, 2});
     auto is_incircle = incircle2d(points.index({triangle}), points[3]);
 
-    BOOST_REQUIRE(is_incircle);
+    BOOST_REQUIRE(is_incircle.item<bool>());
 }
 
 
