@@ -14,7 +14,8 @@
 /// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cmath>
-#include <functional>
+
+#include <ATen/TensorAccessor.h>
 
 #include <torch_delaunay/predicate.h>
 #include <torch_delaunay/sweephull.h>
@@ -32,8 +33,13 @@ euclidean_distance2d(const torch::Tensor& p, const torch::Tensor& q)
 
 
 /// An operation to compute Delaunay-triangulation using sweep-hull algorithm.
+template <typename scalar_t = double>
 struct shull {
     using triangle_type = std::tuple<int64_t, int64_t, int64_t>;
+
+    using point_type = at::TensorAccessor<scalar_t, 1>;
+
+    using point_array_type = at::TensorAccessor<scalar_t, 2>;
 
     /// Hash stores radially-sorted edges, and used to query a visible vertex.
     std::vector<int64_t> hash;
@@ -49,8 +55,8 @@ struct shull {
     std::vector<int64_t> next;
     std::vector<int64_t> prev;
 
-    const torch::Tensor m_center;
-    const torch::Tensor& m_points;
+    const point_type m_center_ptr;
+    const point_array_type m_points_ptr;
 
     int64_t start;
 
@@ -61,8 +67,8 @@ struct shull {
       tri(n, -1),
       next(n, -1),
       prev(n, -1),
-      m_center(center),
-      m_points(points),
+      m_center_ptr(center.accessor<scalar_t, 1>()),
+      m_points_ptr(points.accessor<scalar_t, 2>()),
       start(0)
     {
         auto hash_size = static_cast<int64_t>(std::llround(std::ceil(std::sqrt(n))));
@@ -74,16 +80,15 @@ struct shull {
     ///
     /// The key represents pseudo-angle from the center of the triangulation.
     std::size_t
-    hash_key(const torch::Tensor& p) const
+    hash_key(int64_t i) const
     {
-        const auto delta = p - m_center;
-        const auto dx = delta[0].item<double>();
-        const auto dy = delta[1].item<double>();
+        const auto dx = m_points_ptr[i][0] - m_center_ptr[0];
+        const auto dy = m_points_ptr[i][1] - m_center_ptr[1];
 
         const auto rad = dx / (std::abs(dx) + std::abs(dy));
         const auto angle = (dy > 0.0 ? 3.0 - rad : 1.0 + rad) / 4.0;
 
-        const auto k = std::llround(std::floor(angle * static_cast<double>(hash.size())));
+        const auto k = std::llround(std::floor(angle * static_cast<scalar_t>(hash.size())));
         return static_cast<std::size_t>(k) % hash.size();
     }
 
@@ -93,13 +98,13 @@ struct shull {
         next[i] = j;
         prev[j] = i;
 
-        hash[hash_key(m_points[i])] = i;
+        hash[hash_key(i)] = i;
     }
 
     int64_t
     find_visible_edge(int64_t i) const
     {
-        const auto key = hash_key(m_points[i]);
+        const auto key = hash_key(i);
         int64_t edge_index = 0;
 
         for (std::size_t j = 0; j < hash.size(); j++) {
@@ -133,9 +138,17 @@ struct shull {
     ///
     /// In other words, method returns true when i2 lies on to the left of (i0, i1) vector.
     inline static bool
+    ccw(point_type p0, point_type p1, point_type p2)
+    {
+        return orient2d_kernel<scalar_t>(p0, p1, p2) > scalar_t(0);
+    }
+
+    inline static bool
     ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
     {
-        return orient2d(p0, p1, p2).gt(0).all().item<bool>();
+        return ccw(
+            p0.accessor<scalar_t, 1>(), p1.accessor<scalar_t, 1>(), p2.accessor<scalar_t, 1>()
+        );
     }
 
     /// Returns true when specified points are ordered counterclockwise.
@@ -153,41 +166,59 @@ struct shull {
         return ccw(std::get<0>(tri), std::get<1>(tri), std::get<2>(tri));
     }
 
+    /// Return true, when the specified triangle (simplex) is coplanar.
+    ///
+    /// Here we use an extended interpretation of coplanar points. Apart from considering points
+    /// that reside on the same line we also validate that the circumscribed radius is larger than
+    /// a specified epsilon.
+    static bool
+    iscoplanar(point_type p0, point_type p1, point_type p2, std::optional<scalar_t> eps)
+    {
+        auto radius = circumradius2d_kernel<scalar_t>(p0, p1, p2);
+        return std::isnan(radius) || std::isinf(radius)
+               || (eps.has_value() && radius < eps.value());
+    }
+
+    /// Overridden version of iscoplanar for 1-dimensional tensors representing points.
     static bool
     iscoplanar(
         const torch::Tensor& p0,
         const torch::Tensor& p1,
         const torch::Tensor& p2,
-        std::optional<double> eps
+        std::optional<scalar_t> eps
     )
     {
-        auto radius = circumradius2d(p0, p1, p2).item<double>();
-        return std::isnan(radius) || std::isinf(radius)
-               || (eps.has_value() && radius < eps.value());
+        return iscoplanar(
+            p0.accessor<scalar_t, 1>(), p1.accessor<scalar_t, 1>(), p2.accessor<scalar_t, 1>(), eps
+        );
     }
 
-    /// Return true, when the specified triangle (simplex) is coplanar.
-    ///
-    /// Here we use an extended version of coplanar points. Apart from considering points that
-    /// reside on the same line we also validate that the circumscribed radius is larger than
-    /// a specified epsilon.
+    /// Overridden version of iscoplanar for s-hull triangles.
     bool
-    iscoplanar(int64_t i0, int64_t i1, int64_t i2, std::optional<double> eps) const
+    iscoplanar(int64_t i0, int64_t i1, int64_t i2, std::optional<scalar_t> eps) const
     {
         const auto [p0, p1, p2] = get_tri(i0, i1, i2);
         return iscoplanar(p0, p1, p2, /*eps=*/eps);
+    }
+
+    inline bool
+    incircle(int64_t edge0, int64_t edge1, int64_t edge2, int64_t edge3) const
+    {
+        return incircle2d_kernel<scalar_t>(
+                   m_points_ptr[triangles[edge0]], m_points_ptr[triangles[edge1]],
+                   m_points_ptr[triangles[edge2]], m_points_ptr[triangles[edge3]]
+               )
+               < scalar_t(0);
     }
 
     /// Returns coordinates of the specified triangle.
     ///
     /// Method does not checks the boundaries of the specified indices, therefore, when
     /// indices are outside of the points bounds, the behaviour is undefined.
-    const std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+    const std::tuple<point_type, point_type, point_type>
     get_tri(int64_t i0, int64_t i1, int64_t i2) const
     {
-        return std::forward_as_tuple(
-            m_points[i0].view({-1, 2}), m_points[i1].view({-1, 2}), m_points[i2].view({-1, 2})
-        );
+        return std::forward_as_tuple(m_points_ptr[i0], m_points_ptr[i1], m_points_ptr[i2]);
     }
 
     int64_t
@@ -297,10 +328,7 @@ struct shull {
                 continue;
             }
 
-            auto triangle = torch::tensor({triangles[ar], triangles[a], triangles[al]});
-            auto p1 = m_points[triangles[bl]];
-
-            if (incircle2d(m_points.index({triangle}), p1)) {
+            if (incircle(ar, a, al, bl)) {
                 triangles[a] = triangles[bl];
                 triangles[b] = triangles[ar];
 
@@ -322,12 +350,9 @@ struct shull {
 };
 
 
-/// Compute seed triangle for the sweep-hull triangulation algorithm.
-///
-/// The method computes the center of all specified points and returns coordinates and indices
-/// of the triangle comprised of points with the lowest distance from the center of point cloud.
+template <typename scalar_t>
 std::tuple<torch::Tensor, torch::Tensor>
-shull_seed2d(const torch::Tensor& points, std::optional<double> eps)
+shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 {
     // Indices of the seed triangle.
     torch::Tensor index0, index1, index2;
@@ -357,7 +382,7 @@ shull_seed2d(const torch::Tensor& points, std::optional<double> eps)
         index2 = indices[i];
         p2 = points.index({index2}).view({-1, 2});
 
-        if (!shull::iscoplanar(p0, p1, p2, /*eps=*/eps)) {
+        if (!shull<scalar_t>::iscoplanar(p0[0], p1[0], p2[0], /*eps=*/eps)) {
             break;
         }
     }
@@ -370,7 +395,7 @@ shull_seed2d(const torch::Tensor& points, std::optional<double> eps)
         return std::forward_as_tuple(points_out, indices_out);
     }
 
-    if (shull::ccw(p0, p1, p2)) {
+    if (shull<scalar_t>::ccw(p0[0], p1[0], p2[0])) {
         std::swap(index1, index2);
         std::swap(p1, p2);
     }
@@ -382,8 +407,9 @@ shull_seed2d(const torch::Tensor& points, std::optional<double> eps)
 }
 
 
+template <typename scalar_t>
 torch::Tensor
-shull2d(const torch::Tensor& points, std::optional<double> eps)
+shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 {
     TORCH_CHECK(points.dim() == 2, "shull2d only supports 2D tensors, got ", points.dim(), "D");
     TORCH_CHECK(points.size(0) >= 3, "shull2d expects at least 3 points, got ", points.size(0));
@@ -391,7 +417,7 @@ shull2d(const torch::Tensor& points, std::optional<double> eps)
 
     // Find the seed triangle (comprised of vertices located approximately
     // at the center of the point cloud).
-    const auto [triangle, indices] = shull_seed2d(points, /*eps=*/eps);
+    const auto [triangle, indices] = shull2d_seed_kernel<scalar_t>(points, /*eps=*/eps);
     const auto triangle_options = points.options().dtype(torch::kInt64);
 
     if (triangle.size(0) == 0) {
@@ -401,13 +427,15 @@ shull2d(const torch::Tensor& points, std::optional<double> eps)
     // Radially resort the points.
     const auto center = circumcenter2d(triangle.unsqueeze(0)).squeeze(0);
     const auto ordering = at::argsort(euclidean_distance2d(points, center));
+    const auto ordering_ptr = ordering.template accessor<int64_t, 1>();
 
     const auto n = points.size(0);
     shull hull(n, center, points);
 
-    auto i0 = indices[0].item<int64_t>();
-    auto i1 = indices[1].item<int64_t>();
-    auto i2 = indices[2].item<int64_t>();
+    auto indices_ptr = indices.template accessor<int64_t, 2>();
+    auto i0 = indices_ptr[0][0];
+    auto i1 = indices_ptr[1][0];
+    auto i2 = indices_ptr[2][0];
 
     hull.insert_visible_edge(i0, i1);
     hull.insert_visible_edge(i1, i2);
@@ -423,7 +451,7 @@ shull2d(const torch::Tensor& points, std::optional<double> eps)
 
     // 3 first points are already part of the triangulation, therefore they can be skipped.
     for (const auto k : c10::irange(3, n)) {
-        auto i = ordering[k].item<int64_t>();
+        auto i = ordering_ptr[k];
         auto is = hull.find_visible_edge(i);
         // TODO: Make sure what we found is on the hull?
         auto ie = hull.prev[is];
@@ -482,6 +510,27 @@ shull2d(const torch::Tensor& points, std::optional<double> eps)
     auto triangles = torch::tensor(std::move(hull.triangles), triangle_options);
 
     return triangles.view({tn, 3});
+}
+
+
+/// Compute seed triangle for the sweep-hull triangulation algorithm.
+///
+/// The method computes the center of all specified points and returns coordinates and indices
+/// of the triangle comprised of points with the lowest distance from the center of point cloud.
+torch::Tensor
+shull2d(const torch::Tensor& points, std::optional<const at::Scalar> eps)
+{
+    torch::Tensor triangles;
+
+    AT_DISPATCH_ALL_TYPES(points.scalar_type(), "shull2d", [&] {
+        std::optional<scalar_t> epsilon;
+        if (eps.has_value()) {
+            epsilon = eps.value().to<scalar_t>();
+        }
+        triangles = shull2d_kernel<scalar_t>(points, epsilon);
+    });
+
+    return triangles;
 }
 
 

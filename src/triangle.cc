@@ -13,14 +13,8 @@
 /// You should have received a copy of the GNU General Public License
 /// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include <stack>
-#include <unordered_map>
-
 #include <torch_delaunay/predicate.h>
-#include <torch_delaunay/sweephull.h>
-#include <torch_delaunay/triangle.h>
 
-#include <ATen/native/cpu/Loops.h>
 #include <torch/linalg.h>
 
 
@@ -33,20 +27,19 @@ namespace torch_delaunay {
 std::tuple<torch::Tensor, torch::Tensor>
 _cc_coordinates(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 {
-    auto a = p0;
-    auto b = -p0 + p1;
-    auto c = -p0 + p2;
+    const auto a = p0;
+    const auto b = -p0 + p1;
+    const auto c = -p0 + p2;
 
-    std::initializer_list<at::indexing::TensorIndex> x = {Slice(), 0};
-    std::initializer_list<at::indexing::TensorIndex> y = {Slice(), 1};
+    const std::initializer_list<at::indexing::TensorIndex> x = {Slice(), 0};
+    const std::initializer_list<at::indexing::TensorIndex> y = {Slice(), 1};
+    const auto d = 2 * (b.index(x) * c.index(y) - b.index(y) * c.index(x));
 
-    auto d = 2 * (b.index(x) * c.index(y) - b.index(y) * c.index(x));
+    const auto b_norm = b.square().sum({1});
+    const auto c_norm = c.square().sum({1});
 
-    auto b_norm = b.square().sum({1});
-    auto c_norm = c.square().sum({1});
-
-    auto ux = (c.index(y) * b_norm - b.index(y) * c_norm) / d;
-    auto uy = (b.index(x) * c_norm - c.index(x) * b_norm) / d;
+    const auto ux = (c.index(y) * b_norm - b.index(y) * c_norm) / d;
+    const auto uy = (b.index(x) * c_norm - c.index(x) * b_norm) / d;
 
     return std::forward_as_tuple(ux, uy);
 }
@@ -55,7 +48,7 @@ _cc_coordinates(const torch::Tensor& p0, const torch::Tensor& p1, const torch::T
 torch::Tensor
 circumcenter2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
 {
-    auto [ux, uy] = _cc_coordinates(p0, p1, p2);
+    const auto [ux, uy] = _cc_coordinates(p0, p1, p2);
     return at::column_stack({ux, uy}) + p0;
 }
 
@@ -83,7 +76,7 @@ circumradius2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Te
     TORCH_CHECK(p1.size(1) == 2, op, " only supports 2D coordinates, got: ", p0.size(1), "D");
     TORCH_CHECK(p2.size(1) == 2, op, " only supports 2D coordinates, got: ", p0.size(1), "D");
 
-    auto [ux, uy] = _cc_coordinates(p0, p1, p2);
+    const auto [ux, uy] = _cc_coordinates(p0, p1, p2);
     return (ux.square() + uy.square()).sqrt();
 }
 

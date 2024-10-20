@@ -61,14 +61,14 @@ incircle2d(
 }
 
 
-bool
+torch::Tensor
 incircle2d(const torch::Tensor& points, const torch::Tensor& q)
 {
     const auto d = points - q;
     const auto abc = d.square().sum(-1).view({-1, 1});
     const auto A = torch::hstack({d, abc});
 
-    return torch::linalg::det(A).sign().lt(0).all().item<bool>();
+    return torch::linalg::det(A).sign();
 }
 
 

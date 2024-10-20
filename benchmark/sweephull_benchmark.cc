@@ -22,9 +22,9 @@ using namespace torch_delaunay;
 
 
 static void
-benchmark_shull2d_uniform_float32(benchmark::State& state)
+benchmark_shull2d_uniform_float64(benchmark::State& state)
 {
-    auto options = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU);
+    auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
     auto points = torch::rand({state.range(0), 2}, options);
 
     for (auto _ : state) {
@@ -33,11 +33,7 @@ benchmark_shull2d_uniform_float32(benchmark::State& state)
 }
 
 
-BENCHMARK(benchmark_shull2d_uniform_float32)
-    ->Arg(1000)
-    ->Arg(10000)
-    ->Arg(100000)
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK(benchmark_shull2d_uniform_float64)->Arg(1000000)->Unit(benchmark::kMillisecond);
 
 
 BENCHMARK_MAIN();
