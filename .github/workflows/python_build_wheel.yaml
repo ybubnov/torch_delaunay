@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [windows-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -44,8 +44,8 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - uses: pypa/gh-action-pypi-publish@v1.9.0
-        with:
-          user: __token__
-          password: ${{ secrets.pypi_token }}
-          # repository_url: https://test.pypi.org/legacy/
+      #- uses: pypa/gh-action-pypi-publish@v1.9.0
+      #  with:
+      #    user: __token__
+      #    password: ${{ secrets.pypi_token }}
+      #    # repository_url: https://test.pypi.org/legacy/
