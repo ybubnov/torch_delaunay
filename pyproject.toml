@@ -1,7 +1,6 @@
 [project]
 name = "torch-delaunay"
 dynamic = ["version"]
-license = {file = "LICENSE"}
 
 description = "The Delaunay triangulation for PyTorch"
 authors = [
