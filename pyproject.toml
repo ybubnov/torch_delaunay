@@ -104,7 +104,7 @@ PIP_EXTRA_INDEX_URL = "https://pypi.python.org/simple"
 archs = ["arm64"]
 
 [tools.cibuildwheel.windows]
-build = "cp310-*"# cp311-* cp312-*"
+skip = "cp39-*"
 archs = ["amd64"]
 
 [tool.cibuildwheel.linux]
