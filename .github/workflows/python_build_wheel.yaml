@@ -26,6 +26,9 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.17.0
 
+      - name: Install Torch
+        run: pip install 'torch>=2.3.0,<2.4.0'
+
       - uses: actions/upload-artifact@v4
         with:
           # Use a generated name, since upload-artifacts cannot upload files as is,

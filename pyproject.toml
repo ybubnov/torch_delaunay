@@ -89,7 +89,7 @@ skip = "*.ipynb"
 # Configuration to build wheels for different version of python, operating systems and
 # architectures. See more in documentation: https://cibuildwheel.pypa.io/en/stable/options/
 [tool.cibuildwheel]
-build = "cp310-*" # cp311-* cp312-*"
+build = "cp39-* "# cp310-* cp311-* cp312-*"
 build-verbosity = 3
 skip = "*-musllinux_*"
 repair-wheel-command = ""
