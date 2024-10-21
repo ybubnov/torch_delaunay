@@ -24,18 +24,18 @@ jobs:
           platforms: all
 
       - name: Install Torch
-        run: pip install 'torch>=2.3.0,<2.4.0'
+        run: pip install "torch>=2.3.0,<2.4.0; sys_platform == 'win32'"
 
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.17.0
+      #- name: Build wheels
+      #  uses: pypa/cibuildwheel@v2.17.0
 
-      - uses: actions/upload-artifact@v4
-        with:
-          # Use a generated name, since upload-artifacts cannot upload files as is,
-          # and running jobs in matrix result in a artifact name clash.
-          name: python-wheels-${{ matrix.os }}
-          path: wheelhouse/*.whl
-          retention-days: 7
+      #- uses: actions/upload-artifact@v4
+      #  with:
+      #    # Use a generated name, since upload-artifacts cannot upload files as is,
+      #    # and running jobs in matrix result in a artifact name clash.
+      #    name: python-wheels-${{ matrix.os }}
+      #    path: wheelhouse/*.whl
+      #    retention-days: 7
 
   upload_pypi:
     needs: [build_wheels]
