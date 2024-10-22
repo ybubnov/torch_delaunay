@@ -90,7 +90,7 @@ skip = "*.ipynb"
 [tool.cibuildwheel]
 build = "cp310-*" # cp311-* cp312-*"
 build-verbosity = 3
-skip = "*-musllinux_* *-win32*"
+skip = "*-musllinux_*"
 repair-wheel-command = ""
 
 # Try to find necessary dependencies (primarily torch) from torch index at first,
@@ -99,7 +99,7 @@ repair-wheel-command = ""
 PIP_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 PIP_EXTRA_INDEX_URL = "https://pypi.python.org/simple"
 
-[tools.cibuildwheel.windows]
+[tool.cibuildwheel.windows]
 archs = ["amd64"]
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
