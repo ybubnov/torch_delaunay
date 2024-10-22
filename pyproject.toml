@@ -68,7 +68,7 @@ requires = [
   "torch >= 2.3.0, < 2.4.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   # Windows package build requires a fix with library import path, which is available
   # only after 2.5.0.
-  "torch >= 2.5.0, < 2.6.0; sys_platform == 'win'",
+  "torch >= 2.5.0, < 2.6.0",
   "typing-extensions >= 4.8.0",
   "wheel >= 0.43.0"
 ]
