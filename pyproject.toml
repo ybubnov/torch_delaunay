@@ -94,21 +94,23 @@ build-verbosity = 3
 skip = "*-musllinux_*"
 repair-wheel-command = ""
 
-# Try to find necessary dependencies (primarily torch) from torch index at first,
-# and only then access Python's index for the remaining dependencies.
-[tool.cibuildwheel.environment]
-PIP_INDEX_URL = "https://download.pytorch.org/whl/cpu"
-PIP_EXTRA_INDEX_URL = "https://pypi.python.org/simple"
-
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
-
 [tools.cibuildwheel.windows]
 archs = ["amd64"]
 
+[tool.cibuildwheel.environment]
+PIP_EXTRA_INDEX_URL = "https://pypi.python.org/simple"
+# Try to find necessary dependencies (primarily torch) from torch index at first,
+# and only then access Python's index for the remaining dependencies.
+#
 # Windows packages in /whl/cpu are using +cpu suffix, which are forbidden by PEP518,
 # therefore they cannot be specified in build requirements explicitly. To resolve this,
 # explicitly specify index URL.
+[tool.cibuildwheel.macos.environment]
+PIP_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+[tool.cibuildwheel.linux.environment]
+PIP_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 [tools.cibuildwheel.windows.environment]
 PIP_INDEX_URL = "https://pypi.python.org/simple"
 
