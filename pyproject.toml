@@ -65,8 +65,7 @@ requires = [
   "numpy >= 1.4.0, < 2.0.0",
   "pybind11 >= 2.0.0, < 3.0.0",
   "setuptools ~= 70.0.0",
-  "torch >= 2.3.0, < 2.4.0; sys_platform == 'linux'",
-  "torch >= 2.3.0, < 2.4.0; sys_platform == 'darwin' or sys_platform == 'win'",
+  "torch >= 2.3.0, < 2.4.0",
   "typing-extensions >= 4.8.0",
   "wheel >= 0.43.0"
 ]
