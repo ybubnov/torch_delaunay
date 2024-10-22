@@ -106,6 +106,12 @@ archs = ["arm64"]
 [tools.cibuildwheel.windows]
 archs = ["amd64"]
 
+# Windows packages in /whl/cpu are using +cpu suffix, which are forbidden by PEP518,
+# therefore they cannot be specified in build requirements explicitly. To resolve this,
+# explicitly specify index URL.
+[tools.cibuildwheel.windows.environment]
+PIP_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+
 [tool.cibuildwheel.linux]
 archs = ["aarch64", "x86_64"]
 manylinux-x86_64-image = "manylinux2014"

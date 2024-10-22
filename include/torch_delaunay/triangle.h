@@ -47,7 +47,6 @@ circumcircle2d_kernel(
     const at::TensorAccessor<scalar_t, 1> p2
 )
 {
-    const auto ax = p0[0], ay = p0[1];
     const auto bx = p1[0] - p0[0], by = p1[1] - p0[1];
     const auto cx = p2[0] - p0[0], cy = p2[1] - p0[1];
 

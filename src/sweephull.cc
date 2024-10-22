@@ -258,7 +258,10 @@ struct shull {
     inline void
     push_halfedge(int64_t a, int64_t b)
     {
-        TORCH_CHECK(a <= halfedges.size(), "shull2d: encountered wrong half-edge: ", a, " -> ", b);
+        TORCH_CHECK(
+            a <= static_cast<int64_t>(halfedges.size()),
+            "shull2d: encountered wrong half-edge: ", a, " -> ", b
+        );
 
         if (a < halfedges.size()) {
             halfedges[a] = b;
@@ -399,7 +402,7 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 
     // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
     // at 0 index will be a point with the minimum radius.
-    std::size_t i = 0;
+    int64_t i = 0;
     for (; i < values.size(0); i++) {
         index2 = indices[i];
         p2 = points.index({index2}).view({-1, 2});
