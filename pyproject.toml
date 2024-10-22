@@ -66,7 +66,7 @@ requires = [
   "pybind11 >= 2.0.0, < 3.0.0",
   "setuptools ~= 70.0.0",
   "torch >= 2.3.0, < 2.4.0; sys_platform == 'linux'",
-  "torch >= 2.3.0, < 2.4.0; sys_platform == 'darwin' or sys_platform == 'win32'",
+  "torch >= 2.3.0, < 2.4.0; sys_platform == 'darwin' or sys_platform == 'win'",
   "typing-extensions >= 4.8.0",
   "wheel >= 0.43.0"
 ]
@@ -97,7 +97,7 @@ repair-wheel-command = ""
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
 [tools.cibuildwheel.windows]
-archs = ["amd64"]
+archs = ["AMD64"]
 
 [tool.cibuildwheel.environment]
 PIP_EXTRA_INDEX_URL = "https://pypi.python.org/simple"
