@@ -26,26 +26,26 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.20
 
-      #- uses: actions/upload-artifact@v4
-      #  with:
-      #    # Use a generated name, since upload-artifacts cannot upload files as is,
-      #    # and running jobs in matrix result in a artifact name clash.
-      #    name: python-wheels-${{ matrix.os }}
-      #    path: wheelhouse/*.whl
-      #    retention-days: 7
-
-  upload_pypi:
-    needs: [build_wheels]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4.1.8
+      - uses: actions/upload-artifact@v4
         with:
-          pattern: python-wheels-*
-          path: dist
-          merge-multiple: true
+          # Use a generated name, since upload-artifacts cannot upload files as is,
+          # and running jobs in matrix result in a artifact name clash.
+          name: python-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          retention-days: 7
 
-      #- uses: pypa/gh-action-pypi-publish@v1.9.0
-      #  with:
-      #    user: __token__
-      #    password: ${{ secrets.pypi_token }}
-      #    # repository_url: https://test.pypi.org/legacy/
+  #upload_pypi:
+  #  needs: [build_wheels]
+  #  runs-on: ubuntu-latest
+  #  steps:
+  #    - uses: actions/download-artifact@v4.1.8
+  #      with:
+  #        pattern: python-wheels-*
+  #        path: dist
+  #        merge-multiple: true
+
+  #    - uses: pypa/gh-action-pypi-publish@v1.9.0
+  #      with:
+  #        user: __token__
+  #        password: ${{ secrets.pypi_token }}
+  #        # repository_url: https://test.pypi.org/legacy/
