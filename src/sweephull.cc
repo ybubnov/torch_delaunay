@@ -258,15 +258,13 @@ struct shull {
     inline void
     push_halfedge(int64_t a, int64_t b)
     {
-        TORCH_CHECK(
-            a <= static_cast<int64_t>(halfedges.size()),
-            "shull2d: encountered wrong half-edge: ", a, " -> ", b
-        );
+        int64_t halfedges_size = static_cast<int64_t>(halfedges.size());
+        TORCH_CHECK(a <= halfedges_size, "shull2d: encountered wrong half-edge: ", a, " -> ", b);
 
-        if (a < halfedges.size()) {
+        if (a < halfedges_size) {
             halfedges[a] = b;
         }
-        if (a == halfedges.size()) {
+        if (a == halfedges_size) {
             halfedges.push_back(b);
         }
     }

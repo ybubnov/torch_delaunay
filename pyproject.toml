@@ -51,12 +51,17 @@ test = [
 ]
 
 
+[tool.setuptools]
+include-package-data = false
+
 [tool.setuptools.dynamic]
 version = {attr = "torch_delaunay.__version__"}
 
-
 [tool.setuptools.packages.find]
 include = ["torch_delaunay*"]
+
+[tool.setuptools.package-data]
+torch_delaunay = ["*.cpp", "*_test.py"]
 
 
 [build-system]
