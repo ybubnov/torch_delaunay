@@ -61,7 +61,7 @@ version = {attr = "torch_delaunay.__version__"}
 include = ["torch_delaunay*"]
 
 [tool.setuptools.package-data]
-torch_delaunay = ["*.cpp", "*_test.py"]
+torch_delaunay = ["*.cc"]
 
 
 [build-system]
