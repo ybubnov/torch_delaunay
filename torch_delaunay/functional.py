@@ -15,8 +15,9 @@
 
 from typing import Optional
 
-import torch_delaunay._C as _C
 from torch import Tensor
+
+import torch_delaunay._C as _C
 
 
 def shull2d(points: Tensor, eps: Optional[float] = None) -> Tensor:

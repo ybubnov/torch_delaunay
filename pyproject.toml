@@ -1,7 +1,6 @@
 [project]
 name = "torch-delaunay"
 dynamic = ["version"]
-license = {file = "LICENSE"}
 
 description = "The Delaunay triangulation for PyTorch"
 authors = [
@@ -31,7 +30,10 @@ classifiers = [
   "Operating System :: MacOS"
 ]
 
-dependencies = ["shapely>=2.0.0", "torch >= 2.3.0, < 2.4.0"]
+dependencies = [
+  "torch >= 2.3.0, < 2.6.0; sys_platform == 'darwin' or sys_platform == 'linux'",
+  "torch >= 2.5.0, < 2.6.0; sys_platform == 'win32'",
+]
 
 
 [project.urls]
@@ -49,12 +51,17 @@ test = [
 ]
 
 
+[tool.setuptools]
+include-package-data = false
+
 [tool.setuptools.dynamic]
 version = {attr = "torch_delaunay.__version__"}
 
-
 [tool.setuptools.packages.find]
 include = ["torch_delaunay*"]
+
+[tool.setuptools.package-data]
+torch_delaunay = ["*.cc"]
 
 
 [build-system]
@@ -66,8 +73,10 @@ requires = [
   "numpy >= 1.4.0, < 2.0.0",
   "pybind11 >= 2.0.0, < 3.0.0",
   "setuptools ~= 70.0.0",
-  "torch >= 2.3.0, < 2.4.0; sys_platform == 'linux'",
-  "torch >= 2.3.0, < 2.4.0; sys_platform == 'darwin' or sys_platform == 'win'",
+  "torch >= 2.3.0, < 2.4.0; sys_platform == 'darwin' or sys_platform == 'linux'",
+  # Windows package build requires a fix with library import path, which is available
+  # only after 2.5.0.
+  "torch >= 2.5.0, < 2.6.0; sys_platform == 'win32'",
   "typing-extensions >= 4.8.0",
   "wheel >= 0.43.0"
 ]
@@ -101,9 +110,10 @@ repair-wheel-command = ""
 PIP_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 PIP_EXTRA_INDEX_URL = "https://pypi.python.org/simple"
 
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
-
 [tool.cibuildwheel.linux]
 archs = ["aarch64", "x86_64"]
 manylinux-x86_64-image = "manylinux2014"
