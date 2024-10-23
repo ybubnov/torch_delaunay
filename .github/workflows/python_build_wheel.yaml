@@ -34,18 +34,18 @@ jobs:
           path: wheelhouse/*.whl
           retention-days: 7
 
-  #upload_pypi:
-  #  needs: [build_wheels]
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - uses: actions/download-artifact@v4.1.8
-  #      with:
-  #        pattern: python-wheels-*
-  #        path: dist
-  #        merge-multiple: true
+  upload_pypi:
+    needs: [build_wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4.1.8
+        with:
+          pattern: python-wheels-*
+          path: dist
+          merge-multiple: true
 
-  #    - uses: pypa/gh-action-pypi-publish@v1.9.0
-  #      with:
-  #        user: __token__
-  #        password: ${{ secrets.pypi_token }}
-  #        # repository_url: https://test.pypi.org/legacy/
+      - uses: pypa/gh-action-pypi-publish@v1.9.0
+        with:
+          user: __token__
+          password: ${{ secrets.pypi_token }}
+          # repository_url: https://test.pypi.org/legacy/
