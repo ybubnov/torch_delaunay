@@ -21,7 +21,7 @@ from torch import Tensor
 import torch_delaunay._C as _C
 
 
-def shull2d(points: Tensor, eps: Optional[Union[float | int]] = None) -> Tensor:
+def shull2d(points: Tensor, eps: Optional[Union[float, int]] = None) -> Tensor:
     """Computes Delaunay tessellation for 2-dimensional coordinates.
 
     Note:
