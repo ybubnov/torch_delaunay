@@ -28,7 +28,7 @@ namespace torch_delaunay {
 inline torch::Tensor
 euclidean_distance2d(const torch::Tensor& p, const torch::Tensor& q)
 {
-    return torch::linalg::norm(p - q, /*ord=*/2, /*dim=*/1, false, c10::nullopt);
+    return torch::sqrt((p - q).square().sum(/*dim=*/1));
 }
 
 
@@ -38,6 +38,7 @@ struct shull {
     using triangle_type = std::tuple<int64_t, int64_t, int64_t>;
 
     using point_type = at::TensorAccessor<scalar_t, 1>;
+    using center_type = at::TensorAccessor<double, 1>;
     using point_array_type = at::TensorAccessor<scalar_t, 2>;
 
     /// Hash stores radially-sorted edges, and used to query a visible vertex.
@@ -58,7 +59,7 @@ struct shull {
     std::vector<int64_t> next;
     std::vector<int64_t> prev;
 
-    const point_type m_center_ptr;
+    const center_type m_center_ptr;
     const point_array_type m_points_ptr;
 
     int64_t start;
@@ -71,7 +72,7 @@ struct shull {
       tri(n, -1),
       next(n, -1),
       prev(n, -1),
-      m_center_ptr(center.accessor<scalar_t, 1>()),
+      m_center_ptr(center.accessor<double, 1>()),
       m_points_ptr(points.accessor<scalar_t, 2>()),
       start(0)
     {
@@ -90,13 +91,13 @@ struct shull {
     std::size_t
     hash_key(int64_t i) const
     {
-        const auto dx = m_points_ptr[i][0] - m_center_ptr[0];
-        const auto dy = m_points_ptr[i][1] - m_center_ptr[1];
+        const auto dx = static_cast<double>(m_points_ptr[i][0]) - m_center_ptr[0];
+        const auto dy = static_cast<double>(m_points_ptr[i][1]) - m_center_ptr[1];
 
         const auto rad = dx / (std::abs(dx) + std::abs(dy));
         const auto angle = (dy > 0.0 ? 3.0 - rad : 1.0 + rad) / 4.0;
 
-        const auto k = std::llround(std::floor(angle * static_cast<scalar_t>(hash.size())));
+        const auto k = std::llround(std::floor(angle * static_cast<double>(hash.size())));
         return static_cast<std::size_t>(k) % hash.size();
     }
 
@@ -448,7 +449,12 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     }
 
     // Radially resort the points.
-    const auto center = circumcenter2d(triangle.unsqueeze(0)).squeeze(0);
+    const auto p0 = triangle[0], p1 = triangle[1], p2 = triangle[2];
+    const auto center = circumcenter2d_kernel<scalar_t>(
+        p0.template accessor<scalar_t, 1>(), p1.template accessor<scalar_t, 1>(),
+        p2.template accessor<scalar_t, 1>()
+    );
+
     const auto ordering = at::argsort(euclidean_distance2d(points, center));
     const auto ordering_ptr = ordering.template accessor<int64_t, 1>();
 

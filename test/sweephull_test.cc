@@ -93,6 +93,31 @@ BOOST_AUTO_TEST_CASE(test_shull2d_nan_coplanar)
 }
 
 
+BOOST_AUTO_TEST_CASE(test_shull2d_float32_coplanar)
+{
+    // Unfortunately, circumradius used for coplanar computation, is unstable for
+    // almost equal numbers, therefore computed radius for resulting simplices are
+    // finite and cannot be treated as coplanar.
+    auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
+    auto points = torch::linspace(0, 5, 10, options);
+    points = torch::column_stack({points, points});
+
+    auto simplices = shull2d(points);
+    BOOST_CHECK_GE(simplices.size(0), 0);
+}
+
+
+BOOST_AUTO_TEST_CASE(test_shull2d_integer_coplanar)
+{
+    auto options = torch::TensorOptions().dtype(torch::kInt64).device(torch::kCPU);
+    auto points = torch::linspace(0, 10, 10, options);
+    points = torch::column_stack({points, points});
+
+    auto simplices = shull2d(points);
+    BOOST_CHECK_EQUAL(simplices.size(0), 0);
+}
+
+
 BOOST_AUTO_TEST_CASE(test_shull2d_1000)
 {
     auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);

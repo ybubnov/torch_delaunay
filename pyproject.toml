@@ -31,8 +31,7 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch >= 2.3.0, < 2.6.0; sys_platform == 'darwin' or sys_platform == 'linux'",
-  "torch >= 2.5.0, < 2.6.0; sys_platform == 'win32'",
+  "torch >= 2.5.0, < 2.6.0"
 ]
 
 
@@ -73,10 +72,7 @@ requires = [
   "numpy >= 1.4.0, < 2.0.0",
   "pybind11 >= 2.0.0, < 3.0.0",
   "setuptools ~= 70.0.0",
-  "torch >= 2.3.0, < 2.4.0; sys_platform == 'darwin' or sys_platform == 'linux'",
-  # Windows package build requires a fix with library import path, which is available
-  # only after 2.5.0.
-  "torch >= 2.5.0, < 2.6.0; sys_platform == 'win32'",
+  "torch >= 2.5.0, < 2.6.0",
   "typing-extensions >= 4.8.0",
   "wheel >= 0.43.0"
 ]
