@@ -8,7 +8,7 @@ find_package(Torch CONFIG REQUIRED)
 enable_testing()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
-set(torch_delaunay_LIBRARY_VERSION "1.0.0")
+set(torch_delaunay_LIBRARY_VERSION "1.1.0")
 set(torch_delaunay_LIBRARY_SOVERSION "1")
 
 
