@@ -40,7 +40,7 @@ circumradius2d(const torch::Tensor& points);
 
 
 template <typename scalar_t>
-std::tuple<scalar_t, scalar_t>
+std::tuple<double, double>
 circumcircle2d_kernel(
     const at::TensorAccessor<scalar_t, 1> p0,
     const at::TensorAccessor<scalar_t, 1> p1,
@@ -50,20 +50,33 @@ circumcircle2d_kernel(
     const auto bx = p1[0] - p0[0], by = p1[1] - p0[1];
     const auto cx = p2[0] - p0[0], cy = p2[1] - p0[1];
 
-    const auto d = 2 * (bx * cy - by * cx);
+    const double d = static_cast<double>(2 * (bx * cy - by * cx));
 
     const auto b_norm = bx * bx + by * by;
     const auto c_norm = cx * cx + cy * cy;
 
-    const auto ux = (cy * b_norm - by * c_norm) / d;
-    const auto uy = (bx * c_norm - cx * b_norm) / d;
+    const double ux = (cy * b_norm - by * c_norm) / d;
+    const double uy = (bx * c_norm - cx * b_norm) / d;
 
     return std::forward_as_tuple(ux, uy);
 }
 
 
 template <typename scalar_t>
-scalar_t
+torch::Tensor
+circumcenter2d_kernel(
+    const at::TensorAccessor<scalar_t, 1> p0,
+    const at::TensorAccessor<scalar_t, 1> p1,
+    const at::TensorAccessor<scalar_t, 1> p2
+)
+{
+    const auto [ux, uy] = circumcircle2d_kernel<scalar_t>(p0, p1, p2);
+    return torch::tensor({ux + p0[0], uy + p0[1]}, torch::dtype(torch::kFloat64));
+}
+
+
+template <typename scalar_t>
+double
 circumradius2d_kernel(
     const at::TensorAccessor<scalar_t, 1> p0,
     const at::TensorAccessor<scalar_t, 1> p1,
