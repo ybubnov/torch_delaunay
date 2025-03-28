@@ -57,7 +57,7 @@ incircle2d(
     const auto abc = d.square().sum(2);
     const auto A = torch::cat({d, abc.view({-1, 3, 1})}, -1);
 
-    return torch::linalg::det(A).sign();
+    return torch::linalg_det(A).sign();
 }
 
 
@@ -68,7 +68,7 @@ incircle2d(const torch::Tensor& points, const torch::Tensor& q)
     const auto abc = d.square().sum(-1).view({-1, 1});
     const auto A = torch::hstack({d, abc});
 
-    return torch::linalg::det(A).sign();
+    return torch::linalg_det(A).sign();
 }
 
 
