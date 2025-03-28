@@ -15,8 +15,6 @@
 
 #include <torch_delaunay/predicate.h>
 
-#include <torch/linalg.h>
-
 
 using namespace torch::indexing;
 

@@ -15,7 +15,7 @@
 
 #include <torch_delaunay/predicate.h>
 
-#include <torch/linalg.h>
+#include <ATen/ATen.h>
 
 
 using namespace torch::indexing;
@@ -34,7 +34,7 @@ orient2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& 
     const auto dy = p1 - p2;
 
     const auto A = torch::stack({dx, dy}, 1);
-    return torch::linalg::det(A).sign();
+    return torch::linalg_det(A).sign();
 }
 
 
