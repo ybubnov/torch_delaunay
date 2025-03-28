@@ -32,9 +32,9 @@ import matplotlib.pyplot as plt
 points = torch.rand((100, 2))
 simplices = shull2d(points)
 
-plt.triplot(points.cpu().numpy()[:,0], points.cpu().numpy()[:,1], triangles=simplices.cpu().numpy())
-plt.title('Delaunay Triangulation')
-plt.show()
+# Plot the result
+plt.triplot(points[:, 0], points[:, 1], triangles=simplices)
+plt.title("Delaunay Triangulation")
 ```
 
 ## Benchmarks
