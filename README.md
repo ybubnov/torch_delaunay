@@ -26,10 +26,15 @@ points defined as [PyTorch](https://pytorch.org) tensors.
 ```py
 import torch
 from torch_delaunay.functional import shull2d
+import matplotlib.pyplot as plt
 
 # Compute Delaunay triangulation for randomly-generated 2-dimensional points.
 points = torch.rand((100, 2))
-simplices = shull2d(simplices)
+simplices = shull2d(points)
+
+plt.triplot(points.cpu().numpy()[:,0], points.cpu().numpy()[:,1], triangles=simplices.cpu().numpy())
+plt.title('Delaunay Triangulation')
+plt.show()
 ```
 
 ## Benchmarks
