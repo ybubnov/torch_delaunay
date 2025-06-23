@@ -31,7 +31,7 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch >= 2.5.0, < 2.6.0"
+  "torch >= 2.7.0, < 2.8.0"
 ]
 
 
@@ -72,7 +72,7 @@ requires = [
   "numpy >= 1.4.0, < 2.0.0",
   "pybind11 >= 2.0.0, < 3.0.0",
   "setuptools ~= 70.0.0",
-  "torch >= 2.5.0, < 2.6.0",
+  "torch >= 2.7.0, < 2.8.0",
   "typing-extensions >= 4.8.0",
   "wheel >= 0.43.0"
 ]
@@ -112,8 +112,8 @@ archs = ["AMD64"]
 archs = ["arm64"]
 [tool.cibuildwheel.linux]
 archs = ["aarch64", "x86_64"]
-manylinux-x86_64-image = "manylinux2014"
-manylinux-aarch64-image = "manylinux2014"
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
 repair-wheel-command = """\
     auditwheel repair --only-plat \
         --exclude libc10.so \
