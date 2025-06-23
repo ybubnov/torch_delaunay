@@ -31,7 +31,7 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch >= 2.5.0, < 2.6.0"
+  "torch >= 2.7.0, < 2.8.0"
 ]
 
 
@@ -72,7 +72,7 @@ requires = [
   "numpy >= 1.4.0, < 2.0.0",
   "pybind11 >= 2.0.0, < 3.0.0",
   "setuptools ~= 70.0.0",
-  "torch >= 2.5.0, < 2.6.0",
+  "torch >= 2.7.0, < 2.8.0",
   "typing-extensions >= 4.8.0",
   "wheel >= 0.43.0"
 ]
