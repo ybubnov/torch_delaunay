@@ -32,7 +32,7 @@ jobs:
 
     - name: Install python libraries
       id: install_torch
-      run: pip3 install 'torch>=2.2.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+      run: pip3 install 'torch>=2.7.0' --index-url https://download.pytorch.org/whl/cpu
 
     - name: Find PyTorch cmake prefix path
       id: find_torch
