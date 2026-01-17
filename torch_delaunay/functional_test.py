@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: 2025 Yakau Bubnou
 # SPDX-FileType: SOURCE
 
+import json
+from pathlib import Path
+
 import torch
 from shapely import Point
 from geopandas import GeoDataFrame
@@ -31,3 +34,12 @@ def test_shull2d() -> None:
         circle = Point(*center).buffer(radius)
         incircle = vertices.intersection(circle)
         assert (~incircle.is_empty).sum() <= 3
+
+
+def test_unreferenced_points() -> None:
+    points_text = Path("points.json").read_text()
+    points = torch.tensor(json.loads(points_text))
+
+    simplices = set(shull2d(points).view(-1).unique().numpy())
+    missing = set(range(1214)) - simplices
+    assert missing == set()
