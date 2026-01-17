@@ -27,7 +27,7 @@ jobs:
       id: install_packages
       run: |
         apt-get update
-        apt-get install -y cmake build-essential libboost-test-dev libbenchmark-dev libfmt-dev wget unzip
+        apt-get install -y cmake build-essential libboost-test-dev libboost-json-dev libbenchmark-dev libfmt-dev wget unzip
         apt-get install -y python3-pip python3-numpy
 
     - name: Install python libraries
