@@ -20,10 +20,11 @@ BOOST_AUTO_TEST_CASE(test_incircle2d)
 {
     auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
     auto points = torch::tensor({{0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}, {4.0, 4.0}}, options);
-    auto P = points.accessor<double, 2>();
 
-    auto is_incircle = incircle2d_kernel(P[0], P[1], P[2], P[3]);
-    BOOST_REQUIRE(is_incircle);
+    auto triangle = torch::tensor({0, 1, 2});
+    auto is_incircle = incircle2d(points.index({triangle}), points[3]);
+
+    BOOST_REQUIRE(is_incircle.item<bool>());
 }
 
 
@@ -31,20 +32,14 @@ BOOST_AUTO_TEST_CASE(test_incircle2d_batch)
 {
     auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
 
-    auto points0 = torch::tensor({{0.0, 0.0}, {1.0, 0.0}, {2.0, 0.0}, {3.0, 0.0}}, options);
-    auto points1 = torch::tensor({{1.0, 0.0}, {2.0, 0.0}, {3.0, 0.0}, {4.0, 0.0}}, options);
-    auto points2 = torch::tensor({{0.0, 1.0}, {0.0, 2.0}, {0.0, 3.0}, {0.0, 4.0}}, options);
-    auto queries = torch::tensor({{4.5, 4.9}, {2.5, 2.6}, {3.1, 3.2}, {8.2, 9.4}}, options);
+    auto p0 = torch::tensor({{0.0, 0.0}, {1.0, 0.0}, {2.0, 0.0}, {3.0, 0.0}}, options);
+    auto p1 = torch::tensor({{1.0, 0.0}, {2.0, 0.0}, {3.0, 0.0}, {4.0, 0.0}}, options);
+    auto p2 = torch::tensor({{0.0, 1.0}, {0.0, 2.0}, {0.0, 3.0}, {0.0, 4.0}}, options);
 
-    auto P0 = points0.accessor<double, 2>();
-    auto P1 = points1.accessor<double, 2>();
-    auto P2 = points2.accessor<double, 2>();
-    auto Q = queries.accessor<double, 2>();
+    auto q = torch::tensor({{4.5, 4.9}, {2.5, 2.6}, {3.1, 3.2}, {8.2, 9.4}}, options);
+    auto res = incircle2d(p0, p1, p2, q);
 
-    for (std::size_t i = 0; i < 4; i++) {
-        auto is_incircle = incircle2d_kernel(P0[i], P1[i], P2[i], Q[i]);
-        BOOST_REQUIRE(is_incircle);
-    }
+    BOOST_REQUIRE_EQUAL(res.sizes(), c10::IntArrayRef({4}));
 }
 
 
