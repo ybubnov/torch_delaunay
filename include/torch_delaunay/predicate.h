@@ -7,14 +7,8 @@
 #include <ATen/TensorAccessor.h>
 #include <torch/torch.h>
 
-#include <torch_delaunay/predicate.h>
-
 
 namespace torch_delaunay {
-
-
-torch::Tensor
-orient2d(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2);
 
 
 template <typename scalar_t>
@@ -31,19 +25,6 @@ orient2d_kernel(
     const auto d1_y = p1[1] - p2[1];
     return d0_x * d1_y - d0_y * d1_x;
 }
-
-
-torch::Tensor
-incircle2d(
-    const torch::Tensor& p0,
-    const torch::Tensor& p1,
-    const torch::Tensor& p2,
-    const torch::Tensor& q
-);
-
-
-torch::Tensor
-incircle2d(const torch::Tensor& points, const torch::Tensor& q);
 
 
 template <typename scalar_t>
