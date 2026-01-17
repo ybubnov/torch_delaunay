@@ -1,6 +1,6 @@
-/// SPDX-License-Identifier: GPL-3.0-or-later
-/// SPDX-FileCopyrightText: 2025 Yakau Bubnou
-/// SPDX-FileType: SOURCE
+// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2025 Yakau Bubnou
+// SPDX-FileType: SOURCE
 
 #define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE torch_delaunay
@@ -53,7 +53,7 @@ BOOST_AUTO_TEST_CASE(test_shull2d_no_seed)
 }
 
 
-BOOST_AUTO_TEST_CASE(test_shull2d_inf_coplanar)
+BOOST_AUTO_TEST_CASE(test_shull2d_inf_collinear)
 {
     auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
     auto points = torch::tensor({{0.0, 0.0}, {1.0, 1.0}, {2.0, 2.0}, {3.0, 3.0}}, options);
@@ -66,7 +66,7 @@ BOOST_AUTO_TEST_CASE(test_shull2d_inf_coplanar)
 }
 
 
-BOOST_AUTO_TEST_CASE(test_shull2d_nan_coplanar)
+BOOST_AUTO_TEST_CASE(test_shull2d_nan_collinear)
 {
     auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
     auto points = torch::tensor({{0.0, 0.0}, {1.0, 0.0}, {0.0, 2.0}, {0.0, 0.0}}, options);
@@ -82,11 +82,11 @@ BOOST_AUTO_TEST_CASE(test_shull2d_nan_coplanar)
 }
 
 
-BOOST_AUTO_TEST_CASE(test_shull2d_float32_coplanar)
+BOOST_AUTO_TEST_CASE(test_shull2d_float32_collinear)
 {
-    // Unfortunately, circumradius used for coplanar computation, is unstable for
+    // Unfortunately, circumradius used for collinear computation, is unstable for
     // almost equal numbers, therefore computed radius for resulting simplices are
-    // finite and cannot be treated as coplanar.
+    // finite and cannot be treated as collinear.
     auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
     auto points = torch::linspace(0, 5, 10, options);
     points = torch::column_stack({points, points});
@@ -96,7 +96,7 @@ BOOST_AUTO_TEST_CASE(test_shull2d_float32_coplanar)
 }
 
 
-BOOST_AUTO_TEST_CASE(test_shull2d_integer_coplanar)
+BOOST_AUTO_TEST_CASE(test_shull2d_integer_collinear)
 {
     auto options = torch::TensorOptions().dtype(torch::kInt64).device(torch::kCPU);
     auto points = torch::linspace(0, 10, 10, options);
@@ -114,6 +114,19 @@ BOOST_AUTO_TEST_CASE(test_shull2d_1000)
 
     auto simplices = shull2d(points);
     BOOST_CHECK(simplices.size(0) > 100);
+}
+
+
+BOOST_AUTO_TEST_CASE(test_shull2d_triangles)
+{
+    auto options = torch::TensorOptions().dtype(torch::kFloat64).device(torch::kCPU);
+    auto points = make_fixture_points();
+
+    auto simplices = shull2d(points);
+    BOOST_CHECK(simplices.size(0) >= 0);
+
+    auto [unique_vertices, _] = at::_unique(simplices.view(-1));
+    BOOST_CHECK(unique_vertices.size(0) == points.size(0));
 }
 
 

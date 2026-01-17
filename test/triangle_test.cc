@@ -1,6 +1,6 @@
-/// SPDX-License-Identifier: GPL-3.0-or-later
-/// SPDX-FileCopyrightText: 2025 Yakau Bubnou
-/// SPDX-FileType: SOURCE
+// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2025 Yakau Bubnou
+// SPDX-FileType: SOURCE
 
 #define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE torch_delaunay

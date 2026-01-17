@@ -1,6 +1,6 @@
-/// SPDX-License-Identifier: GPL-3.0-or-later
-/// SPDX-FileCopyrightText: 2025 Yakau Bubnou
-/// SPDX-FileType: SOURCE
+// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2025 Yakau Bubnou
+// SPDX-FileType: SOURCE
 
 #include <cmath>
 
@@ -282,7 +282,7 @@ struct shull {
     const std::tuple<point_type, point_type, point_type>
     get_tri(int64_t i0, int64_t i1, int64_t i2) const
     {
-        return std::forward_as_tuple(m_points_ptr[i0], m_points_ptr[i1], m_points_ptr[i2]);
+        return std::make_tuple(m_points_ptr[i0], m_points_ptr[i1], m_points_ptr[i2]);
     }
 
     int64_t
@@ -335,29 +335,20 @@ struct shull {
         }
     }
 
-    triangle_type
+    void
     forward(const triangle_type& triangle, int64_t edge)
     {
         auto [j, i, k] = triangle;
         tri[i] = edge;
-
-        std::swap(j, next[j]);
-        TORCH_CHECK(j != next[j], "shull2d: encountered collinear simplex in forward pass");
-
-        return std::make_tuple(j, i, next[j]);
+        next[j] = j;
     }
 
-    triangle_type
+    void
     backward(const triangle_type& triangle, int64_t edge)
     {
         auto [j, i, k] = triangle;
         tri[j] = edge;
         next[k] = k;
-
-        std::swap(k, prev[k]);
-        TORCH_CHECK(k != prev[k], "shull2d: encountered collinear simplex in backward pass");
-
-        return std::make_tuple(prev[k], i, k);
     }
 
     inline triangle_type
@@ -440,10 +431,13 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     // Choose seed points close to a centroid of the point cloud.
     auto [min, max] = points.aminmax(0);
     const auto centroid = (max + min) / 2;
-    const auto dists = euclidean_distance2d(points, centroid);
+    auto dists = euclidean_distance2d(points, centroid);
 
-    std::tie(values, indices) = at::topk(dists, 2, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
+    std::tie(values, indices) = at::topk(dists, 1, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
     index0 = indices[0];
+
+    dists = euclidean_distance2d(points, values[0]);
+    std::tie(values, indices) = at::topk(dists, 2, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
     index1 = indices[1];
 
     p0 = points.index({index0}).view({-1, 2});
@@ -463,7 +457,6 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         p2 = points.index({index2}).view({-1, 2});
 
         if (!hull_type::iscollinear(p0[0], p1[0], p2[0], /*eps=*/eps)) {
-            std::cout << "points are not collinear" << std::endl;
             break;
         }
     }
@@ -473,7 +466,7 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         auto points_out = torch::empty({0, 2}, points.options());
         auto indices_out = torch::empty({0, 3}, indices.options());
 
-        return std::forward_as_tuple(points_out, indices_out);
+        return std::make_tuple(points_out, indices_out);
     }
 
     if (hull_type::orient(p0[0], p1[0], p2[0]) < 0) {
@@ -517,14 +510,11 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 
     const auto n = points.size(0);
     shull<scalar_t> hull(n, center, points);
-    std::cout << "Total points=" << n << std::endl;
 
     auto indices_ptr = indices.template accessor<int64_t, 2>();
     auto i0 = indices_ptr[0][0];
     auto i1 = indices_ptr[1][0];
     auto i2 = indices_ptr[2][0];
-
-    std::cout << "First triangle: " << i0 << ", " << i1 << ", " << i2 << std::endl;
 
     hull.insert_visible_edge(i0, i1);
     hull.insert_visible_edge(i1, i2);
@@ -542,43 +532,30 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         auto i = ordering_ptr[k];
         // Skip points comprising a seed triangle.
         if (i == i0 or i == i1 or i == i2) {
-            std::cout << "skip point" << std::endl;
             continue;
         }
-
         if (k > 0 && hull.isduplicate(ordering_ptr[k - 1], i, eps)) {
-            std::cout << "skip duplicate" << std::endl;
             continue;
         }
-
-        std::cout << "point i=" << i << " " << std::flush;
-        // if ((i == 475) || (i == 604)) {
-        //     std::cout << "!! " << std::flush;
-        // }
 
         auto is = hull.find_visible_edge(i);
-        std::cout << "visible_edge=" << is << " " << std::flush;
         // TODO: Make sure what we found is on the hull?
         auto ie = hull.prev[is];
 
-        while (hull.orient(ie, i, hull.next[ie]) > 0 && ie != -1) {
-            std::cout << "orient=" << hull.orient(ie, i, hull.next[ie]) << std::endl;
-            ie = hull.next[ie];
+        while (ie != -1 && hull.orient(i, ie, hull.next[ie]) >= 0) {
+            ie = hull.next[ie] == hull.prev[is] ? -1 : hull.next[ie];
         }
-        std::cout << "rotated_ccw " << std::flush;
-        // TODO: what to do with this vertex: maybe raise an exception?
+        // After iterating over the hull, there are no triangles found that are
+        // oriented clounterclockwise, skipping this points from the triangulation.
         if (ie == -1) {
-            std::cout << "skip ie=" << ie << std::endl;
             continue;
         }
 
         // Ensure that each triangle's circumradius is at least the size of the specified
         // epsilon value, skip the point from triangulation otherwise.
         if (hull.iscollinear(ie, i, hull.next[ie], /*eps=*/eps)) {
-            std::cout << "skip collinear: " << ie << " " << i << " " << hull.next[ie] << std::endl;
             continue;
         }
-        std::cout << "push_tri ";
 
         auto edge0 = hull.push_tri(ie, i, hull.next[ie]);
         auto edge1 = hull.push_edges(-1, -1, hull.tri[ie]);
@@ -588,27 +565,26 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         // Traverse forward through the hull, adding more triangles and flipping
         // them recursively.
         auto in = hull.next[ie];
-        auto tri = std::make_tuple(in, i, hull.next[in]);
 
-        while (hull.orient(tri) < 0) {
+        while (hull.orient(i, in, hull.next[in]) < 0) {
+            auto tri = std::make_tuple(in, i, hull.next[in]);
+            in = hull.next[in];
+
             edge0 = hull.push_tri(tri);
             edge1 = hull.push_forward_edges(tri);
-
-            tri = hull.forward(tri, edge1);
-            in = std::get<0>(tri);
+            hull.forward(tri, edge1);
         }
-        std::cout << std::endl;
 
         // Traverse backward through the hull, adding more triangles and flipping
         // them recursively.
         if (hull.prev[is] == ie) {
-            auto tri = std::make_tuple(hull.prev[ie], i, ie);
-            while (hull.orient(tri) < 0) {
+            while (hull.orient(i, hull.prev[ie], ie) < 0) {
+                auto tri = std::make_tuple(hull.prev[ie], i, ie);
+                ie = hull.prev[ie];
+
                 edge0 = hull.push_tri(tri);
                 edge1 = hull.push_backward_edges(tri);
-
-                tri = hull.backward(tri, edge0);
-                ie = std::get<2>(tri);
+                hull.backward(tri, edge0);
             }
         }
 
