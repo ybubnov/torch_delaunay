@@ -416,9 +416,9 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     // Find the second seed point with the minimum distance (larger than 0)
     // to the first point of the seed triangle.
     int64_t index1 = -1;
-    auto dist_min = std::numeric_limits<double>::max();
+    auto dist_min = std::numeric_limits<double>::infinity();
 
-    for (std::size_t i = 0; i < dists.size(0); i++) {
+    for (int64_t i = 0; i < dists.size(0); i++) {
         if (i == index0) {
             continue;
         }
@@ -442,9 +442,9 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 
     // Find the third point such that it forms the smallest circumcircle with p0 and p1.
     int64_t index2 = -1;
-    auto radius_min = std::numeric_limits<double>::max();
+    auto radius_min = std::numeric_limits<double>::infinity();
 
-    for (std::size_t i = 0; i < points.size(0); i++) {
+    for (int64_t i = 0; i < points.size(0); i++) {
         if (i == index0 or i == index1) {
             continue;
         }
@@ -467,6 +467,7 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 
     auto point2 = points[index2];
     const auto p2 = point2.accessor<scalar_t, 1>();
+
     if (hull_type::orient(p0, p1, p2) < 0) {
         std::swap(index1, index2);
         std::swap(point1, point2);
@@ -540,7 +541,7 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         // TODO: Make sure what we found is on the hull?
         auto ie = hull.prev[is];
 
-        while (ie != -1 && hull.orient(i, ie, hull.next[ie]) >= 0) {
+        while (ie != -1 && hull.orient(i, ie, hull.next[ie]) > 0) {
             ie = hull.next[ie] == hull.prev[is] ? -1 : hull.next[ie];
         }
         // After iterating over the hull, there are no triangles found that are
@@ -587,8 +588,8 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         }
 
         hull.start = ie;
-        hull.insert_visible_edge(ie, i);
         hull.insert_visible_edge(i, in);
+        hull.insert_visible_edge(ie, i);
     }
 
     int64_t tn = hull.triangles.size() / 3;
