@@ -3,6 +3,7 @@
 // SPDX-FileType: SOURCE
 
 #include <cmath>
+#include <limits>
 
 #include <ATen/TensorAccessor.h>
 
@@ -382,59 +383,74 @@ template <typename scalar_t>
 std::tuple<torch::Tensor, torch::Tensor>
 shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 {
-    // Indices of the seed triangle.
-    torch::Tensor index0, index1, index2;
-    torch::Tensor values, indices;
-    torch::Tensor p0, p1, p2;
-
-    // Choose seed points close to a centroid of the point cloud.
-    auto [min, max] = points.aminmax(0);
-    const auto centroid = (max + min) / 2;
-    auto dists = euclidean_distance2d(points, centroid);
-
-    std::tie(values, indices) = at::topk(dists, 1, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
-    index0 = indices[0];
-
-    dists = euclidean_distance2d(points, values[0]);
-    std::tie(values, indices) = at::topk(dists, 2, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
-    index1 = indices[1];
-
-    p0 = points.index({index0}).view({-1, 2});
-    p1 = points.index({index1}).view({-1, 2});
-
-    // Find the third point such that forms the smallest circumcircle with i0 and i1.
-    const auto radii = circumradius2d(p0, p1, points);
-    std::tie(values, indices) = at::topk(radii, 3, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
-
     using hull_type = shull<scalar_t>;
 
-    // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
-    // at 0 index will be a point with the minimum radius.
-    int64_t i = 0;
-    for (; i < values.size(0); i++) {
-        index2 = indices[i];
-        p2 = points.index({index2}).view({-1, 2});
+    // The seed of the triangulat might be empty in case when all points are
+    // comprising only collinear triangles.
+    auto points_out = torch::empty({0, 2}, points.options());
 
-        if (!hull_type::iscollinear(p0[0], p1[0], p2[0], /*eps=*/eps)) {
-            break;
+    auto indices_options = torch::TensorOptions().dtype(torch::kInt64);
+    auto indices_out = torch::empty({0, 3}, indices_options);
+
+    // Find the first seed point with the minimum distance to a centroid of the point cloud.
+    auto [min, max] = points.aminmax(0);
+    auto dists = euclidean_distance2d(points, (max + min) / 2);
+
+    auto [_, indices] = at::topk(dists, 1, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
+    auto index0 = indices[0].item<int64_t>();
+    auto p0 = points[index0].view({1, 2});
+
+    // Find the second seed point with the minimum distance (larger than 0)
+    // to the first point of the seed triangle.
+    dists = euclidean_distance2d(points, p0).view(-1).to(torch::kFloat64);
+    const auto dists_ptr = dists.accessor<double, 1>();
+
+    int64_t index1 = -1;
+    auto p1_dist = std::numeric_limits<scalar_t>::max();
+
+    for (std::size_t i = 0; i < dists.size(0); i++) {
+        if (dists_ptr[i] > 0 && dists_ptr[i] < p1_dist) {
+            index1 = i;
+            p1_dist = dists_ptr[i];
         }
     }
-
-    // There are no non-collinear simplices, therefore return empty tensors in the result.
-    if (i == values.size(0)) {
-        auto points_out = torch::empty({0, 2}, points.options());
-        auto indices_out = torch::empty({0, 3}, indices.options());
-
+    // When all points collapse to a single point, return an empty seed triangle.
+    if (index1 == -1) {
         return std::make_tuple(points_out, indices_out);
     }
 
+    auto p1 = points[index1].view({-1, 2});
+
+    // Find the third point such that it forms the smallest circumcircle with p0 and p1.
+    const auto radii = circumradius2d(p0, p1, points).view(-1).to(torch::kFloat64);
+    const auto radii_ptr = radii.accessor<double, 1>();
+
+    // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
+    // at 0 index likely is going to be a point with the minimum radius.
+    int64_t index2 = -1;
+    auto p2_dist = std::numeric_limits<scalar_t>::max();
+
+    for (std::size_t i = 0; i < radii.size(0); i++) {
+        if (radii_ptr[i] > 0 && radii_ptr[i] < p2_dist) {
+            if (!hull_type::iscollinear(p0[0], p1[0], points[i], /*eps=*/eps)) {
+                index2 = i;
+                p2_dist = radii_ptr[i];
+            }
+        }
+    }
+    // There are no non-collinear simplices, therefore return empty tensors in the result.
+    if (index2 == -1) {
+        return std::make_tuple(points_out, indices_out);
+    }
+
+    auto p2 = points[index2].view({1, 2});
     if (hull_type::orient(p0[0], p1[0], p2[0]) < 0) {
         std::swap(index1, index2);
         std::swap(p1, p2);
     }
 
-    auto points_out = at::vstack({p0, p1, p2});
-    auto indices_out = at::vstack({index0, index1, index2});
+    points_out = at::vstack({p0, p1, p2});
+    indices_out = torch::tensor({index0, index1, index2}, indices_options);
 
     return std::make_tuple(points_out, indices_out);
 }
@@ -470,10 +486,10 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     const auto n = points.size(0);
     shull<scalar_t> hull(n, center, points);
 
-    auto indices_ptr = indices.template accessor<int64_t, 2>();
-    auto i0 = indices_ptr[0][0];
-    auto i1 = indices_ptr[1][0];
-    auto i2 = indices_ptr[2][0];
+    auto indices_ptr = indices.template accessor<int64_t, 1>();
+    auto i0 = indices_ptr[0];
+    auto i1 = indices_ptr[1];
+    auto i2 = indices_ptr[2];
 
     hull.insert_visible_edge(i0, i1);
     hull.insert_visible_edge(i1, i2);
