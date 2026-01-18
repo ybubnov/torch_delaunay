@@ -445,7 +445,7 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     auto radius_min = std::numeric_limits<double>::infinity();
 
     for (int64_t i = 0; i < points.size(0); i++) {
-        if (i == index0 or i == index1) {
+        if (i == index0 || i == index1) {
             continue;
         }
 
@@ -530,7 +530,7 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     for (const auto k : c10::irange(n)) {
         auto i = ordering_ptr[k];
         // Skip points comprising a seed triangle.
-        if (i == i0 or i == i1 or i == i2) {
+        if (i == i0 || i == i1 || i == i2) {
             continue;
         }
         if (k > 0 && hull.isduplicate(ordering_ptr[k - 1], i, eps)) {
