@@ -21,6 +21,17 @@ euclidean_distance2d(const torch::Tensor& p, const torch::Tensor& q)
     return torch::sqrt((p - q).square().sum(/*dim=*/1));
 }
 
+template <typename scalar_t>
+double
+euclidean_distance2d_kernel(
+    const at::TensorAccessor<scalar_t, 1>& p, const at::TensorAccessor<scalar_t, 1>& q
+)
+{
+    const auto d0 = double(q[0]) - double(p[0]);
+    const auto d1 = double(q[1]) - double(p[1]);
+    return std::sqrt(d0 * d0 + d1 * d1);
+}
+
 
 /// An operation to compute Delaunay-triangulation using sweep-hull algorithm.
 template <typename scalar_t>
@@ -92,12 +103,13 @@ struct shull {
     }
 
     void
-    insert_visible_edge(int64_t i, int64_t j)
+    insert_visible_edge(int64_t i0, int64_t i1)
     {
-        next[i] = j;
-        prev[j] = i;
+        TORCH_CHECK(i0 != i1, "shull2d: encountered a hull loop");
+        prev[i1] = i0;
+        next[i0] = i1;
 
-        hash[hash_key(i)] = i;
+        hash[hash_key(i0)] = i0;
     }
 
     int64_t
@@ -398,20 +410,26 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 
     auto [_, indices] = at::topk(dists, 1, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
     auto index0 = indices[0].item<int64_t>();
-    auto p0 = points[index0].view({1, 2});
+    auto point0 = points[index0];
+    const auto p0 = point0.accessor<scalar_t, 1>();
 
     // Find the second seed point with the minimum distance (larger than 0)
     // to the first point of the seed triangle.
-    dists = euclidean_distance2d(points, p0).view(-1).to(torch::kFloat64);
-    const auto dists_ptr = dists.accessor<double, 1>();
-
     int64_t index1 = -1;
-    auto p1_dist = std::numeric_limits<scalar_t>::max();
+    auto dist_min = std::numeric_limits<double>::max();
 
     for (std::size_t i = 0; i < dists.size(0); i++) {
-        if (dists_ptr[i] > 0 && dists_ptr[i] < p1_dist) {
+        if (i == index0) {
+            continue;
+        }
+
+        auto pointi = points[i];
+        auto pi = pointi.accessor<scalar_t, 1>();
+        auto dist = euclidean_distance2d_kernel(p0, pi);
+
+        if (dist > 0 && dist < dist_min) {
             index1 = i;
-            p1_dist = dists_ptr[i];
+            dist_min = dist;
         }
     }
     // When all points collapse to a single point, return an empty seed triangle.
@@ -419,22 +437,26 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         return std::make_tuple(points_out, indices_out);
     }
 
-    auto p1 = points[index1].view({-1, 2});
+    auto point1 = points[index1];
+    const auto p1 = point1.accessor<scalar_t, 1>();
 
     // Find the third point such that it forms the smallest circumcircle with p0 and p1.
-    const auto radii = circumradius2d(p0, p1, points).view(-1).to(torch::kFloat64);
-    const auto radii_ptr = radii.accessor<double, 1>();
-
-    // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
-    // at 0 index likely is going to be a point with the minimum radius.
     int64_t index2 = -1;
-    auto p2_dist = std::numeric_limits<scalar_t>::max();
+    auto radius_min = std::numeric_limits<double>::max();
 
-    for (std::size_t i = 0; i < radii.size(0); i++) {
-        if (radii_ptr[i] > 0 && radii_ptr[i] < p2_dist) {
-            if (!hull_type::iscollinear(p0[0], p1[0], points[i], /*eps=*/eps)) {
+    for (std::size_t i = 0; i < points.size(0); i++) {
+        if (i == index0 or i == index1) {
+            continue;
+        }
+
+        auto pointi = points[i];
+        auto pi = pointi.accessor<scalar_t, 1>();
+        auto radius = circumradius2d_kernel(p0, p1, pi);
+
+        if (radius > 0 && radius < radius_min) {
+            if (!hull_type::iscollinear(p0, p1, pi, /*eps=*/eps)) {
                 index2 = i;
-                p2_dist = radii_ptr[i];
+                radius_min = radius;
             }
         }
     }
@@ -443,13 +465,14 @@ shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         return std::make_tuple(points_out, indices_out);
     }
 
-    auto p2 = points[index2].view({1, 2});
-    if (hull_type::orient(p0[0], p1[0], p2[0]) < 0) {
+    auto point2 = points[index2];
+    const auto p2 = point2.accessor<scalar_t, 1>();
+    if (hull_type::orient(p0, p1, p2) < 0) {
         std::swap(index1, index2);
-        std::swap(p1, p2);
+        std::swap(point1, point2);
     }
 
-    points_out = at::vstack({p0, p1, p2});
+    points_out = at::vstack({point0.view({1, 2}), point1.view({1, 2}), point2.view({1, 2})});
     indices_out = torch::tensor({index0, index1, index2}, indices_options);
 
     return std::make_tuple(points_out, indices_out);
@@ -542,7 +565,7 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         auto in = hull.next[ie];
 
         while (hull.orient(i, in, hull.next[in]) < 0) {
-            auto tri = std::make_tuple(in, i, hull.next[in]);
+            const auto tri = std::make_tuple(in, i, hull.next[in]);
             in = hull.next[in];
 
             edge0 = hull.push_tri(tri);
@@ -554,7 +577,7 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         // them recursively.
         if (hull.prev[is] == ie) {
             while (hull.orient(i, hull.prev[ie], ie) < 0) {
-                auto tri = std::make_tuple(hull.prev[ie], i, ie);
+                const auto tri = std::make_tuple(hull.prev[ie], i, ie);
                 ie = hull.prev[ie];
 
                 edge0 = hull.push_tri(tri);
@@ -564,8 +587,8 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         }
 
         hull.start = ie;
-        hull.insert_visible_edge(i, in);
         hull.insert_visible_edge(ie, i);
+        hull.insert_visible_edge(i, in);
     }
 
     int64_t tn = hull.triangles.size() / 3;

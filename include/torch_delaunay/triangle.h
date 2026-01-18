@@ -47,7 +47,7 @@ circumcircle2d_kernel(
     const double ux = (cy * b_norm - by * c_norm) / d;
     const double uy = (bx * c_norm - cx * b_norm) / d;
 
-    return std::forward_as_tuple(ux, uy);
+    return std::make_tuple(ux, uy);
 }
 
 
