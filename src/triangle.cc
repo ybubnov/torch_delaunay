@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2025 Yakau Bubnou
 // SPDX-FileType: SOURCE
 
-#include <torch_delaunay/predicate.h>
+#include <torch_delaunay/triangle.h>
 
 
 using namespace torch::indexing;
@@ -28,7 +28,7 @@ _cc_coordinates(const torch::Tensor& p0, const torch::Tensor& p1, const torch::T
     const auto ux = (c.index(y) * b_norm - b.index(y) * c_norm) / d;
     const auto uy = (b.index(x) * c_norm - c.index(x) * b_norm) / d;
 
-    return std::forward_as_tuple(ux, uy);
+    return std::make_tuple(ux, uy);
 }
 
 

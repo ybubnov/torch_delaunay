@@ -7,8 +7,6 @@
 #include <ATen/TensorAccessor.h>
 #include <torch/torch.h>
 
-#include <torch_delaunay/predicate.h>
-
 
 namespace torch_delaunay {
 
@@ -29,7 +27,7 @@ orient2d_kernel(
     const auto d0_y = p0[1] - p2[1];
     const auto d1_x = p1[0] - p2[0];
     const auto d1_y = p1[1] - p2[1];
-    return d0_x * d1_y - d0_y * d1_x;
+    return d0_y * d1_x - d0_x * d1_y;
 }
 
 

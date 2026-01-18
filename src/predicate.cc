@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: 2025 Yakau Bubnou
 // SPDX-FileType: SOURCE
 
-#include <torch_delaunay/predicate.h>
-
 #include <ATen/ATen.h>
+
+#include <torch_delaunay/predicate.h>
 
 
 using namespace torch::indexing;

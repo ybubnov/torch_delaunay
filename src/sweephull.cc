@@ -3,6 +3,7 @@
 // SPDX-FileType: SOURCE
 
 #include <cmath>
+#include <limits>
 
 #include <ATen/TensorAccessor.h>
 
@@ -18,6 +19,17 @@ inline torch::Tensor
 euclidean_distance2d(const torch::Tensor& p, const torch::Tensor& q)
 {
     return torch::sqrt((p - q).square().sum(/*dim=*/1));
+}
+
+template <typename scalar_t>
+double
+euclidean_distance2d_kernel(
+    const at::TensorAccessor<scalar_t, 1>& p, const at::TensorAccessor<scalar_t, 1>& q
+)
+{
+    const auto d0 = double(q[0]) - double(p[0]);
+    const auto d1 = double(q[1]) - double(p[1]);
+    return std::sqrt(d0 * d0 + d1 * d1);
 }
 
 
@@ -91,12 +103,13 @@ struct shull {
     }
 
     void
-    insert_visible_edge(int64_t i, int64_t j)
+    insert_visible_edge(int64_t i0, int64_t i1)
     {
-        next[i] = j;
-        prev[j] = i;
+        TORCH_CHECK(i0 != i1, "shull2d: encountered a hull loop");
+        prev[i1] = i0;
+        next[i0] = i1;
 
-        hash[hash_key(i)] = i;
+        hash[hash_key(i0)] = i0;
     }
 
     int64_t
@@ -132,72 +145,96 @@ struct shull {
         return push_tri(std::get<0>(triangle), std::get<1>(triangle), std::get<2>(triangle));
     }
 
-    /// Returns true when specified points are ordered counterclockwise.
+    /// Returns a triangle orientation.
     ///
-    /// In other words, method returns true when i2 lies on to the left of (i0, i1) vector.
-    inline static bool
-    ccw(point_type p0, point_type p1, point_type p2)
+    /// A positive number is returned, when specified points are ordered counterclockwise,
+    /// a negative is returned, when points are ordered clockwise. Zero is returned in case
+    /// if points are collinear.
+    ///
+    /// In other words, method returns true when p2 lies on to the left of (p0, p1) vector.
+    inline static scalar_t
+    orient(const point_type& p0, const point_type& p1, const point_type& p2)
     {
-        return orient2d_kernel<scalar_t>(p0, p1, p2) > scalar_t(0);
+        return orient2d_kernel<scalar_t>(p0, p1, p2);
     }
 
-    /// Returns true when specified points are ordered counterclockwise.
-    inline static bool
-    ccw(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
+    /// See \ref orient.
+    inline static scalar_t
+    orient(const torch::Tensor& p0, const torch::Tensor& p1, const torch::Tensor& p2)
     {
-        return ccw(
+        return orient(
             p0.accessor<scalar_t, 1>(), p1.accessor<scalar_t, 1>(), p2.accessor<scalar_t, 1>()
         );
     }
 
-    /// Returns true when specified points are ordered counterclockwise.
-    inline bool
-    ccw(int64_t i0, int64_t i1, int64_t i2) const
+    /// See \ref orient.
+    inline scalar_t
+    orient(int64_t i0, int64_t i1, int64_t i2) const
     {
         const auto [p0, p1, p2] = get_tri(i0, i1, i2);
-        return ccw(p0, p1, p2);
+        return orient(p0, p1, p2);
     }
 
-    /// Returns true when specified points are ordered counterclockwise.
-    inline bool
-    ccw(const triangle_type& tri) const
+    /// See \ref orient.
+    inline scalar_t
+    orient(const triangle_type& tri) const
     {
-        return ccw(std::get<0>(tri), std::get<1>(tri), std::get<2>(tri));
+        return orient(std::get<0>(tri), std::get<1>(tri), std::get<2>(tri));
     }
 
-    /// Returns true, when the specified triangle (simplex) is coplanar.
+    /// Returns true, when the specified triangle (simplex) is collinear.
     ///
-    /// Here we use an extended interpretation of coplanar points. Apart from considering points
+    /// Here we use an extended interpretation of collinear points. Apart from considering points
     /// that reside on the same line we also validate that the circumscribed radius is larger than
     /// a specified epsilon.
     static bool
-    iscoplanar(point_type p0, point_type p1, point_type p2, std::optional<scalar_t> eps)
+    iscollinear(
+        const point_type& p0,
+        const point_type& p1,
+        const point_type& p2,
+        std::optional<scalar_t> eps
+    )
     {
         auto radius = circumradius2d_kernel<scalar_t>(p0, p1, p2);
         return std::isnan(radius) || std::isinf(radius)
                || (eps.has_value() && radius < eps.value());
     }
 
-    /// Returns true, when the specified triangle is coplanar.
+    /// Returns true, when the specified triangle is collinear.
     static bool
-    iscoplanar(
+    iscollinear(
         const torch::Tensor& p0,
         const torch::Tensor& p1,
         const torch::Tensor& p2,
         std::optional<scalar_t> eps
     )
     {
-        return iscoplanar(
+        return iscollinear(
             p0.accessor<scalar_t, 1>(), p1.accessor<scalar_t, 1>(), p2.accessor<scalar_t, 1>(), eps
         );
     }
 
-    /// Returns true, when the specified triangle is coplanar.
+    /// Returns true, when the specified triangle is collinear.
     bool
-    iscoplanar(int64_t i0, int64_t i1, int64_t i2, std::optional<scalar_t> eps) const
+    iscollinear(int64_t i0, int64_t i1, int64_t i2, std::optional<scalar_t> eps) const
     {
         const auto [p0, p1, p2] = get_tri(i0, i1, i2);
-        return iscoplanar(p0, p1, p2, /*eps=*/eps);
+        return iscollinear(p0, p1, p2, /*eps=*/eps);
+    }
+
+    static bool
+    isduplicate(const point_type& p0, const point_type& p1, std::optional<scalar_t> eps)
+    {
+        return (
+            eps.has_value() && std::abs(p0[0] - p1[0]) <= eps.value()
+            && std::abs(p0[1] - p1[1]) <= eps.value()
+        );
+    }
+
+    inline bool
+    isduplicate(int64_t i0, int64_t i1, std::optional<scalar_t> eps) const
+    {
+        return isduplicate(m_points_ptr[i0], m_points_ptr[i1], eps);
     }
 
     inline bool
@@ -217,7 +254,7 @@ struct shull {
     const std::tuple<point_type, point_type, point_type>
     get_tri(int64_t i0, int64_t i1, int64_t i2) const
     {
-        return std::forward_as_tuple(m_points_ptr[i0], m_points_ptr[i1], m_points_ptr[i2]);
+        return std::make_tuple(m_points_ptr[i0], m_points_ptr[i1], m_points_ptr[i2]);
     }
 
     int64_t
@@ -270,29 +307,20 @@ struct shull {
         }
     }
 
-    triangle_type
+    void
     forward(const triangle_type& triangle, int64_t edge)
     {
         auto [j, i, k] = triangle;
         tri[i] = edge;
-
-        std::swap(j, next[j]);
-        TORCH_CHECK(j != next[j], "shull2d: encountered coplanar simplex");
-
-        return std::make_tuple(j, i, next[j]);
+        next[j] = j;
     }
 
-    triangle_type
+    void
     backward(const triangle_type& triangle, int64_t edge)
     {
         auto [j, i, k] = triangle;
         tri[j] = edge;
         next[k] = k;
-
-        std::swap(k, prev[k]);
-        TORCH_CHECK(k != prev[k], "shull2d: encountered coplanar simplex");
-
-        return std::make_tuple(prev[k], i, k);
     }
 
     inline triangle_type
@@ -367,56 +395,88 @@ template <typename scalar_t>
 std::tuple<torch::Tensor, torch::Tensor>
 shull2d_seed_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
 {
-    // Indices of the seed triangle.
-    torch::Tensor index0, index1, index2;
-    torch::Tensor values, indices;
-    torch::Tensor p0, p1, p2;
+    using hull_type = shull<scalar_t>;
 
-    // Choose seed points close to a centroid of the point cloud.
+    // The seed of the triangulat might be empty in case when all points are
+    // comprising only collinear triangles.
+    auto points_out = torch::empty({0, 2}, points.options());
+
+    auto indices_options = torch::TensorOptions().dtype(torch::kInt64);
+    auto indices_out = torch::empty({0, 3}, indices_options);
+
+    // Find the first seed point with the minimum distance to a centroid of the point cloud.
     auto [min, max] = points.aminmax(0);
-    const auto centroid = (max + min) / 2;
-    const auto dists = euclidean_distance2d(points, centroid);
+    auto dists = euclidean_distance2d(points, (max + min) / 2);
 
-    std::tie(values, indices) = at::topk(dists, 2, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
-    index0 = indices[0];
-    index1 = indices[1];
+    auto [_, indices] = at::topk(dists, 1, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
+    auto index0 = indices[0].item<int64_t>();
+    auto point0 = points[index0];
+    const auto p0 = point0.accessor<scalar_t, 1>();
 
-    p0 = points.index({index0}).view({-1, 2});
-    p1 = points.index({index1}).view({-1, 2});
+    // Find the second seed point with the minimum distance (larger than 0)
+    // to the first point of the seed triangle.
+    int64_t index1 = -1;
+    auto dist_min = std::numeric_limits<double>::infinity();
 
-    // Find the third point such that forms the smallest circumcircle with i0 and i1.
-    const auto radii = circumradius2d(p0, p1, points);
-    std::tie(values, indices) = at::topk(radii, 3, /*dim=*/-1, /*largest=*/false, /*sorted=*/true);
+    for (int64_t i = 0; i < dists.size(0); i++) {
+        if (i == index0) {
+            continue;
+        }
 
-    // For points p0 and p1, radii of circumscribed circle will be set to `nan`, therefore
-    // at 0 index will be a point with the minimum radius.
-    int64_t i = 0;
-    for (; i < values.size(0); i++) {
-        index2 = indices[i];
-        p2 = points.index({index2}).view({-1, 2});
+        auto pointi = points[i];
+        auto pi = pointi.accessor<scalar_t, 1>();
+        auto dist = euclidean_distance2d_kernel(p0, pi);
 
-        if (!shull<scalar_t>::iscoplanar(p0[0], p1[0], p2[0], /*eps=*/eps)) {
-            break;
+        if (dist > 0 && dist < dist_min) {
+            index1 = i;
+            dist_min = dist;
         }
     }
-
-    // There are no non-coplanar simplices, therefore return empty tensors in the result.
-    if (i == values.size(0)) {
-        auto points_out = torch::empty({0, 2}, points.options());
-        auto indices_out = torch::empty({0, 3}, indices.options());
-
-        return std::forward_as_tuple(points_out, indices_out);
+    // When all points collapse to a single point, return an empty seed triangle.
+    if (index1 == -1) {
+        return std::make_tuple(points_out, indices_out);
     }
 
-    if (shull<scalar_t>::ccw(p0[0], p1[0], p2[0])) {
+    auto point1 = points[index1];
+    const auto p1 = point1.accessor<scalar_t, 1>();
+
+    // Find the third point such that it forms the smallest circumcircle with p0 and p1.
+    int64_t index2 = -1;
+    auto radius_min = std::numeric_limits<double>::infinity();
+
+    for (int64_t i = 0; i < points.size(0); i++) {
+        if (i == index0 or i == index1) {
+            continue;
+        }
+
+        auto pointi = points[i];
+        auto pi = pointi.accessor<scalar_t, 1>();
+        auto radius = circumradius2d_kernel(p0, p1, pi);
+
+        if (radius > 0 && radius < radius_min) {
+            if (!hull_type::iscollinear(p0, p1, pi, /*eps=*/eps)) {
+                index2 = i;
+                radius_min = radius;
+            }
+        }
+    }
+    // There are no non-collinear simplices, therefore return empty tensors in the result.
+    if (index2 == -1) {
+        return std::make_tuple(points_out, indices_out);
+    }
+
+    auto point2 = points[index2];
+    const auto p2 = point2.accessor<scalar_t, 1>();
+
+    if (hull_type::orient(p0, p1, p2) < 0) {
         std::swap(index1, index2);
-        std::swap(p1, p2);
+        std::swap(point1, point2);
     }
 
-    auto points_out = at::vstack({p0, p1, p2});
-    auto indices_out = at::vstack({index0, index1, index2});
+    points_out = at::vstack({point0.view({1, 2}), point1.view({1, 2}), point2.view({1, 2})});
+    indices_out = torch::tensor({index0, index1, index2}, indices_options);
 
-    return std::forward_as_tuple(points_out, indices_out);
+    return std::make_tuple(points_out, indices_out);
 }
 
 
@@ -450,10 +510,10 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     const auto n = points.size(0);
     shull<scalar_t> hull(n, center, points);
 
-    auto indices_ptr = indices.template accessor<int64_t, 2>();
-    auto i0 = indices_ptr[0][0];
-    auto i1 = indices_ptr[1][0];
-    auto i2 = indices_ptr[2][0];
+    auto indices_ptr = indices.template accessor<int64_t, 1>();
+    auto i0 = indices_ptr[0];
+    auto i1 = indices_ptr[1];
+    auto i2 = indices_ptr[2];
 
     hull.insert_visible_edge(i0, i1);
     hull.insert_visible_edge(i1, i2);
@@ -467,24 +527,32 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
     hull.push_tri(i0, i1, i2);
     hull.push_edges(-1, -1, -1);
 
-    // 3 first points are already part of the triangulation, therefore they can be skipped.
-    for (const auto k : c10::irange(3, n)) {
+    for (const auto k : c10::irange(n)) {
         auto i = ordering_ptr[k];
+        // Skip points comprising a seed triangle.
+        if (i == i0 or i == i1 or i == i2) {
+            continue;
+        }
+        if (k > 0 && hull.isduplicate(ordering_ptr[k - 1], i, eps)) {
+            continue;
+        }
+
         auto is = hull.find_visible_edge(i);
         // TODO: Make sure what we found is on the hull?
         auto ie = hull.prev[is];
 
-        while (hull.ccw(ie, i, hull.next[ie]) && ie != -1) {
-            ie = hull.next[ie];
+        while (ie != -1 && hull.orient(i, ie, hull.next[ie]) > 0) {
+            ie = hull.next[ie] == hull.prev[is] ? -1 : hull.next[ie];
         }
-        // TODO: what to do with this vertex: maybe raise an exception?
+        // After iterating over the hull, there are no triangles found that are
+        // oriented clounterclockwise, skipping this points from the triangulation.
         if (ie == -1) {
             continue;
         }
 
         // Ensure that each triangle's circumradius is at least the size of the specified
         // epsilon value, skip the point from triangulation otherwise.
-        if (hull.iscoplanar(ie, i, hull.next[ie], /*eps=*/eps)) {
+        if (hull.iscollinear(ie, i, hull.next[ie], /*eps=*/eps)) {
             continue;
         }
 
@@ -496,26 +564,26 @@ shull2d_kernel(const torch::Tensor& points, std::optional<scalar_t> eps)
         // Traverse forward through the hull, adding more triangles and flipping
         // them recursively.
         auto in = hull.next[ie];
-        auto tri = std::make_tuple(in, i, hull.next[in]);
 
-        while (!hull.ccw(tri)) {
+        while (hull.orient(i, in, hull.next[in]) < 0) {
+            const auto tri = std::make_tuple(in, i, hull.next[in]);
+            in = hull.next[in];
+
             edge0 = hull.push_tri(tri);
             edge1 = hull.push_forward_edges(tri);
-
-            tri = hull.forward(tri, edge1);
-            in = std::get<0>(tri);
+            hull.forward(tri, edge1);
         }
 
         // Traverse backward through the hull, adding more triangles and flipping
         // them recursively.
         if (hull.prev[is] == ie) {
-            auto tri = std::make_tuple(hull.prev[ie], i, ie);
-            while (!hull.ccw(tri)) {
+            while (hull.orient(i, hull.prev[ie], ie) < 0) {
+                const auto tri = std::make_tuple(hull.prev[ie], i, ie);
+                ie = hull.prev[ie];
+
                 edge0 = hull.push_tri(tri);
                 edge1 = hull.push_backward_edges(tri);
-
-                tri = hull.backward(tri, edge0);
-                ie = std::get<2>(tri);
+                hull.backward(tri, edge0);
             }
         }
 

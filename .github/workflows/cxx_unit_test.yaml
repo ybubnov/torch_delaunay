@@ -8,9 +8,9 @@ on:
 
 jobs:
   unit-tests:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     container:
-      image: ubuntu:22.04
+      image: ubuntu:24.04
 
     steps:
     - name: Checkout source code
@@ -27,12 +27,13 @@ jobs:
       id: install_packages
       run: |
         apt-get update
-        apt-get install -y cmake build-essential libboost-test-dev libbenchmark-dev libfmt-dev wget unzip
+        apt-get install -y cmake build-essential libboost-test-dev libboost-json-dev libbenchmark-dev libfmt-dev wget unzip
         apt-get install -y python3-pip python3-numpy
 
     - name: Install python libraries
       id: install_torch
-      run: pip3 install 'torch>=2.2.0+cpu' --index-url https://download.pytorch.org/whl/cpu
+      run: |
+        pip3 install 'torch>=2.7.0,<2.8.0' --index-url https://download.pytorch.org/whl/cpu --break-system-packages
 
     - name: Find PyTorch cmake prefix path
       id: find_torch
